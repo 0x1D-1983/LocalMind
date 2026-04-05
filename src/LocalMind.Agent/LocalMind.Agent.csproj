@@ -9,9 +9,16 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.AI.Ollama" Version="9.7.0-preview.1.25356.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.5" />
     <PackageReference Include="OllamaSharp" Version="5.4.25" />
     <PackageReference Include="Qdrant.Client" Version="1.17.0" />
     <PackageReference Include="Spectre.Console" Version="0.55.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LocalMind.Tools\LocalMind.Tools.csproj" />
+    <ProjectReference Include="..\LocalMind.Cache\LocalMind.Cache.csproj" />
   </ItemGroup>
 
 </Project>
