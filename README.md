@@ -1,8 +1,9 @@
 # LocalMind
+> **Work in progress**
 
 Local **RAG + ReAct agent** stack: [Ollama](https://ollama.com/) for chat and embeddings, [Qdrant](https://qdrant.tech/) for vector search, optional **SQLite** for structured queries, and a **.NET** agent loop (tool calls, structured JSON answers, semantic cache).
 
-> **Work in progress** — APIs, layout, and docs are evolving; expect things to move or change without a strict migration story yet.
+
 
 ## Prerequisites
 
@@ -53,6 +54,16 @@ Wire up `LocalMind.Cli` with DI (`AddAgent`, `AddToolInfrastructure`, tools, Oll
 | **LocalMind.Cache** | Semantic cache support for the agent |
 | **LocalMind.Cli** | Executable host (to be connected to services) |
 
+## Flow Diagrams
+
+### React Loop
+
+![ReAct loop state machine](react_loop_state_machine.svg)
+
+### Tool Executor Dispatch
+
+![Tool executor dispatch flow](tool_executor_dispatch_flow.svg)
+
 ## Configuration
 
 Bind **`Agent`** from configuration (see `AgentOptions`):
@@ -80,7 +91,3 @@ Requires the **`Microsoft.Extensions.Options.ConfigurationExtensions`** package 
 ## Docker Compose
 
 `docker-compose.yml` runs **Qdrant** with a persistent volume. Optional **TimescaleDB** / **pgAdmin** blocks are present but commented out for later use.
-
-## License
-
-Specify your license here if applicable.
