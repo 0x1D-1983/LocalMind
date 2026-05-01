@@ -1,4 +1,5 @@
-﻿using OllamaSharp;
+﻿using System.Text.RegularExpressions;
+using OllamaSharp;
 using OllamaSharp.Models;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
@@ -8,26 +9,32 @@ namespace LocalMind.Ingestion;
 // DocumentIngester.cs
 public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant)
 {
-    private const int ChunkSize = 400;
-    private const int Overlap = 40;
+    /// <summary>Target size for sub-chunks inside a long paragraph.</summary>
+    private const int ChunkSize = 480;
+
+    /// <summary>Larger overlap keeps facts (e.g. names in one sentence) duplicated across adjacent vectors for better recall.</summary>
+    private const int Overlap = 160;
 
     public async Task IngestAsync(string filePath)
     {
         var text = await File.ReadAllTextAsync(filePath);
-        var chunks = Chunk(text, ChunkSize, Overlap);
+        var chunks = ChunkByParagraphs(text, ChunkSize, Overlap).ToList();
+        var docLabel = Path.GetFileName(filePath);
 
         foreach (var (chunk, index) in chunks.Select((c, i) => (c, i)))
         {
-            // Generate embedding
+            // Prefix the document name only for the embedding so vectors align with file/topic-specific questions;
+            // payload keeps the raw chunk text for the model to read.
+            var embedText = $"{docLabel}\n{chunk}";
+
             var embedding = await ollama.EmbedAsync(
                 new EmbedRequest {
                     Model = "nomic-embed-text",
-                    Input = [chunk]
+                    Input = [embedText]
                 });
 
             var vector = embedding.Embeddings[0];
 
-            // Upsert to Qdrant
             await qdrant.UpsertAsync("knowledge", [
                 new PointStruct {
                     Id = new PointId { Uuid = Guid.NewGuid().ToString() },
@@ -42,17 +49,46 @@ public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant)
         }
     }
 
-    private static IEnumerable<string> Chunk(string text, int size, int overlap)
+    /// <summary>
+    /// Split on blank lines first so biography sections, headers, and paragraphs stay intact when possible.
+    /// Long paragraphs still use a sliding window with overlap.
+    /// </summary>
+    private static IEnumerable<string> ChunkByParagraphs(string text, int size, int overlap)
     {
         if (string.IsNullOrEmpty(text))
             yield break;
 
-        var step = Math.Max(1, size - overlap);
-        for (var i = 0; i < text.Length; i += step)
+        foreach (var paragraph in SplitParagraphs(text))
         {
-            var len = Math.Min(size, text.Length - i);
-            yield return text.Substring(i, len);
-            if (i + len >= text.Length)
+            foreach (var chunk in ChunkWithinParagraph(paragraph, size, overlap))
+                yield return chunk;
+        }
+    }
+
+    private static IEnumerable<string> SplitParagraphs(string text)
+    {
+        foreach (var p in Regex.Split(text, @"\r?\n\s*\r?\n", RegexOptions.Multiline))
+        {
+            var t = p.Trim();
+            if (t.Length > 0)
+                yield return t;
+        }
+    }
+
+    private static IEnumerable<string> ChunkWithinParagraph(string paragraph, int size, int overlap)
+    {
+        if (paragraph.Length <= size)
+        {
+            yield return paragraph;
+            yield break;
+        }
+
+        var step = Math.Max(1, size - overlap);
+        for (var i = 0; i < paragraph.Length; i += step)
+        {
+            var len = Math.Min(size, paragraph.Length - i);
+            yield return paragraph.Substring(i, len);
+            if (i + len >= paragraph.Length)
                 yield break;
         }
     }

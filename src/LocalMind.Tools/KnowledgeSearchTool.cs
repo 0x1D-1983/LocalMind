@@ -28,7 +28,8 @@ public sealed class KnowledgeSearchTool(
         Call this tool whenever the user asks about facts, topics, people, events, or wording that could appear
         in uploaded markdown or internal docs — including "new" files they just added.
         You may call it multiple times with different queries if the first results are thin.
-        Prefer a focused search query (key terms from the user's question).
+        Prefer search queries that name the subject plus the fact you need (e.g. "Jean Grey parents family John Elaine"
+        for questions about who someone's parents are — avoid overly vague single-word queries like "parents" alone).
         Do NOT use for live database metrics or real-time counts unless the user clearly needs DB data.
         Returns ranked chunks with file paths, short file names, and text excerpts.
         """;
@@ -46,7 +47,7 @@ public sealed class KnowledgeSearchTool(
             ["top_k"] = new JsonObject
             {
                 ["type"] = "integer",
-                ["description"] = "Number of chunks to return. Default: 8, max: 10. Use 8–10 when searching for newer or niche docs so they are not pushed out of the top results."
+                ["description"] = "Number of chunks to return. Default: 15, max: 25. Use 18–25 for narrow factual questions (names, dates, relationships) so the right passage is not buried under generic mentions of the same topic."
             }
         },
         ["required"] = new JsonArray { "query" }
@@ -68,19 +69,26 @@ public sealed class KnowledgeSearchTool(
             return ToolResult.Fail(Name, "Query must be a non-empty string.", sw.Elapsed);
         }
 
-        var topK = 8;
+        const int maxK = 25;
+        var topK = 15;
         if (input.TryGetPropertyValue("top_k", out var topKNode) && topKNode is JsonValue topKVal)
         {
             if (topKVal.TryGetValue(out int i))
-                topK = Math.Clamp(i, 1, 10);
+                topK = Math.Clamp(i, 1, maxK);
             else if (topKVal.TryGetValue(out long l))
-                topK = Math.Clamp((int)l, 1, 10);
+                topK = Math.Clamp((int)l, 1, maxK);
         }
 
         try
         {
+            // For relationship / biography-style questions, enrich the embedding only (not the logged query) so vectors
+            // sit closer to prose like "daughter of John and Elaine" when the user says "parents" or "who were".
+            var embedQuery = ShouldExpandEmbeddingQuery(queryText)
+                ? $"{queryText}\nbiography family parents relatives early life background"
+                : queryText;
+
             var embed = await ollama.EmbedAsync(
-                new EmbedRequest { Model = EmbedModel, Input = [queryText] },
+                new EmbedRequest { Model = EmbedModel, Input = [embedQuery] },
                 ct);
 
             var vector = embed.Embeddings[0];
@@ -140,5 +148,15 @@ public sealed class KnowledgeSearchTool(
         if (v.HasDoubleValue)
             return (long)v.DoubleValue;
         return -1;
+    }
+
+    private static bool ShouldExpandEmbeddingQuery(string query)
+    {
+        var s = query.ToLowerInvariant();
+        return s.Contains("parent") || s.Contains("mother") || s.Contains("father")
+            || s.Contains("family") || s.Contains("sibling") || s.Contains("relative")
+            || s.Contains("who was") || s.Contains("who were") || s.Contains("who is")
+            || s.Contains("who are") || s.Contains("born") || s.Contains("child of")
+            || s.Contains("daughter of") || s.Contains("son of");
     }
 }
