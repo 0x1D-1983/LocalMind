@@ -25,11 +25,13 @@ public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant)
                     Input = [chunk]
                 });
 
+            var vector = embedding.Embeddings[0];
+
             // Upsert to Qdrant
             await qdrant.UpsertAsync("knowledge", [
                 new PointStruct {
                     Id = new PointId { Uuid = Guid.NewGuid().ToString() },
-                    Vectors = embedding.Embeddings.ToArray(),
+                    Vectors = vector,
                     Payload = {
                         ["source"] = filePath,
                         ["chunk_index"] = index,
@@ -42,8 +44,16 @@ public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant)
 
     private static IEnumerable<string> Chunk(string text, int size, int overlap)
     {
-        // TODO: Implement sliding window chunker
-        // Stretch: chunk on sentence boundaries instead of fixed tokens
-        return Enumerable.Empty<string>();
+        if (string.IsNullOrEmpty(text))
+            yield break;
+
+        var step = Math.Max(1, size - overlap);
+        for (var i = 0; i < text.Length; i += step)
+        {
+            var len = Math.Min(size, text.Length - i);
+            yield return text.Substring(i, len);
+            if (i + len >= text.Length)
+                yield break;
+        }
     }
 }
