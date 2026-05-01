@@ -104,11 +104,16 @@ public sealed class KnowledgeSearchTool(
             var results = hits.Select(h =>
             {
                 var sourcePath = PayloadString(h.Payload, "source");
+                var filename = PayloadString(h.Payload, "filename");
+                if (string.IsNullOrEmpty(filename) && !string.IsNullOrEmpty(sourcePath))
+                    filename = Path.GetFileName(sourcePath);
+
                 return new
                 {
                     score = h.Score,
                     source = sourcePath,
-                    file = string.IsNullOrEmpty(sourcePath) ? "" : Path.GetFileName(sourcePath),
+                    filename,
+                    file = filename,
                     chunk_index = PayloadLong(h.Payload, "chunk_index"),
                     text = PayloadString(h.Payload, "text"),
                 };
@@ -119,9 +124,9 @@ public sealed class KnowledgeSearchTool(
             if (results.Count > 0)
             {
                 logger.LogInformation(
-                    "Knowledge search: {Count} chunk(s); top file={File} score={Score:F4}",
+                    "Knowledge search: {Count} chunk(s); top filename={File} score={Score:F4}",
                     results.Count,
-                    results[0].file,
+                    results[0].filename,
                     results[0].score);
             }
             else

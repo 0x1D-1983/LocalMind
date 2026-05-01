@@ -41,6 +41,7 @@ public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant)
                     Vectors = vector,
                     Payload = {
                         ["source"] = filePath,
+                        ["filename"] = docLabel,
                         ["chunk_index"] = index,
                         ["text"] = chunk
                     }

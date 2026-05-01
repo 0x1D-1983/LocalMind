@@ -110,6 +110,8 @@ public sealed class Agent
         };
 
         var trace = new AgentTraceBuilder();
+        var kbSourceFilesOrdered = new List<string>();
+        var kbSourceFilesSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // ── Phase 3: ReAct loop ───────────────────────────────────────────────
         for (int iteration = 0; iteration < _options.MaxIterations; iteration++)
@@ -144,10 +146,13 @@ public sealed class Agent
             {
                 sw.Stop();
 
+                var traceSnapshot = trace.Build(sw.Elapsed);
                 var response = await ParseFinalResponseAsync(
                     raw:    llmResponse.Message.Content ?? string.Empty,
-                    trace:  trace.Build(sw.Elapsed),
+                    trace:  traceSnapshot,
                     ct:     ct);
+
+                response = GroundKnowledgeSources(response, kbSourceFilesOrdered, traceSnapshot);
 
                 _logger.LogInformation(
                     "Agent completed in {Iterations} iteration(s), {TotalMs}ms, " +
@@ -177,6 +182,7 @@ public sealed class Agent
             // so it can correlate results with its earlier tool call decisions.
             foreach (var result in toolResults)
             {
+                AppendKnowledgeSearchSourceFiles(result, kbSourceFilesOrdered, kbSourceFilesSeen);
                 history.Add(new Message(ChatRole.Tool, result.Content)
                 {
                     ToolName = result.ToolName
@@ -392,6 +398,7 @@ public sealed class Agent
         - If multiple tools give independent information, combine them in your answer.
         - If you cannot answer, set confidence to 0.0 and explain in "answer".
         - Never invent data — only report what the tools return.
+        - In "sources", list ONLY file or table names that actually appeared in tool results. Never invent filenames.
         - confidence 1.0 = fully grounded in tool results, 0.5 = partially inferred,
           0.0 = unable to answer.
 
@@ -445,5 +452,87 @@ public sealed class Agent
 
         if (response.ToolsUsed is null)
             throw new AgentResponseValidationException("'tools_used' array must not be null.");
+    }
+
+    /// <summary>
+    /// Models often hallucinate plausible filenames in <c>sources</c>. When <c>search_knowledge_base</c> ran,
+    /// ground markdown-like entries using filenames from the tool JSON. Non-markdown source strings (e.g. DB tables)
+    /// from the model are kept when they do not duplicate grounded files.
+    /// </summary>
+    private static AgentResponse GroundKnowledgeSources(
+        AgentResponse response,
+        List<string> kbSourceFilesOrdered,
+        AgentTrace trace)
+    {
+        var kbRan = trace.ToolCallSequence.Any(static n => n == "search_knowledge_base");
+        if (!kbRan)
+            return response;
+
+        static bool LooksLikeMarkdownFile(string s) =>
+            s.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+            || s.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase);
+
+        var nonMdFromModel = response.Sources
+            .Where(s => !string.IsNullOrWhiteSpace(s) && !LooksLikeMarkdownFile(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (kbSourceFilesOrdered.Count > 0)
+        {
+            var merged = new List<string>(kbSourceFilesOrdered);
+            foreach (var s in nonMdFromModel)
+            {
+                if (!merged.Exists(t => t.Equals(s, StringComparison.OrdinalIgnoreCase)))
+                    merged.Add(s);
+            }
+
+            return response with { Sources = [.. merged] };
+        }
+
+        // KB ran but no filenames parsed — drop invented .md / .markdown only.
+        return response with { Sources = [.. nonMdFromModel] };
+    }
+
+    private static void AppendKnowledgeSearchSourceFiles(
+        ToolResult result,
+        List<string> ordered,
+        HashSet<string> seen)
+    {
+        if (result.ToolName != "search_knowledge_base" || !result.IsSuccess)
+            return;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(result.Content);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return;
+
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                var file = "";
+                if (el.TryGetProperty("filename", out var fn) && fn.ValueKind == JsonValueKind.String)
+                    file = fn.GetString() ?? "";
+                if (string.IsNullOrEmpty(file)
+                    && el.TryGetProperty("file", out var f)
+                    && f.ValueKind == JsonValueKind.String)
+                    file = f.GetString() ?? "";
+                if (string.IsNullOrEmpty(file)
+                    && el.TryGetProperty("source", out var s)
+                    && s.ValueKind == JsonValueKind.String)
+                {
+                    var path = s.GetString();
+                    if (!string.IsNullOrEmpty(path))
+                        file = Path.GetFileName(path);
+                }
+
+                if (string.IsNullOrEmpty(file) || !seen.Add(file))
+                    continue;
+                ordered.Add(file);
+            }
+        }
+        catch (JsonException)
+        {
+            // Malformed tool JSON — leave sources unchanged for this result.
+        }
     }
 }
