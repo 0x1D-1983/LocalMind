@@ -1,15 +1,26 @@
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool stub skeletons (flesh out in Phase 3)
+// Knowledge base search (Qdrant + same embedding model as ingestion)
 // ─────────────────────────────────────────────────────────────────────────────
 
+using System.Diagnostics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
-using LocalMind.Tools;
+using Microsoft.Extensions.Logging;
+using OllamaSharp;
+using OllamaSharp.Models;
+using Qdrant.Client;
+using Qdrant.Client.Grpc;
 
+namespace LocalMind.Tools;
 
-/// <summary>Stub — implement in LocalMind.Tools/KnowledgeSearchTool.cs</summary>
-public sealed class KnowledgeSearchTool : ITool
+public sealed class KnowledgeSearchTool(
+    OllamaApiClient ollama,
+    QdrantClient qdrant,
+    ILogger<KnowledgeSearchTool> logger) : ITool
 {
+    private const string CollectionName = "knowledge";
+    private const string EmbedModel = "nomic-embed-text";
+
     public string Name => "search_knowledge_base";
 
     public string Description => """
@@ -38,9 +49,60 @@ public sealed class KnowledgeSearchTool : ITool
         ["required"] = new JsonArray { "query" }
     };
 
-    public Task<ToolResult> ExecuteAsync(JsonObject input, CancellationToken ct = default)
+    public async Task<ToolResult> ExecuteAsync(JsonObject input, CancellationToken ct = default)
     {
-        // TODO Phase 3: embed query via Nomic, search Qdrant, return top_k chunks
-        throw new NotImplementedException("Implement in Phase 3 — Qdrant + Nomic embeddings");
+        var sw = Stopwatch.StartNew();
+        if (!input.TryGetPropertyValue("query", out var queryNode) || queryNode is not JsonValue queryVal)
+        {
+            sw.Stop();
+            return ToolResult.Fail(Name, "Missing or invalid 'query' argument.", sw.Elapsed);
+        }
+
+        var queryText = queryVal.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(queryText))
+        {
+            sw.Stop();
+            return ToolResult.Fail(Name, "Query must be a non-empty string.", sw.Elapsed);
+        }
+
+        var topK = 3;
+        if (input.TryGetPropertyValue("top_k", out var topKNode) && topKNode is JsonValue topKVal)
+        {
+            if (topKVal.TryGetValue(out int i))
+                topK = Math.Clamp(i, 1, 10);
+            else if (topKVal.TryGetValue(out long l))
+                topK = Math.Clamp((int)l, 1, 10);
+        }
+
+        try
+        {
+            var embed = await ollama.EmbedAsync(
+                new EmbedRequest { Model = EmbedModel, Input = [queryText] },
+                ct);
+
+            var vector = embed.Embeddings[0];
+            var hits = await qdrant.SearchAsync(CollectionName, vector, limit: (ulong)topK, cancellationToken: ct);
+
+            var results = hits.Select(h => new
+            {
+                score = h.Score,
+                source = PayloadString(h.Payload, "source"),
+                text = PayloadString(h.Payload, "text"),
+            }).ToList();
+
+            sw.Stop();
+            var json = JsonSerializer.Serialize(results);
+            logger.LogDebug("Knowledge search returned {Count} hit(s) for query length {Len}", results.Count, queryText.Length);
+            return ToolResult.Ok(Name, json, sw.Elapsed);
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            logger.LogError(ex, "Knowledge search failed");
+            return ToolResult.Fail(Name, ex.Message, sw.Elapsed);
+        }
     }
+
+    private static string PayloadString(IReadOnlyDictionary<string, Value> payload, string key) =>
+        payload.TryGetValue(key, out var v) ? v.StringValue : "";
 }
