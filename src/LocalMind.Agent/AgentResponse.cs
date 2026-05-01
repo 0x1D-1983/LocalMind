@@ -1,18 +1,28 @@
+using System.Text.Json.Serialization;
+
 namespace LocalMind.Agent;
 
 /// <summary>
 /// The structured output contract returned by every agent run.
 ///
-/// Every field maps 1:1 to the JSON schema in the system prompt.
+/// Every field maps 1:1 to the JSON schema in the system prompt (snake_case keys).
 /// The model is instructed to populate all fields — Confidence and ToolsUsed
 /// give you per-query signal for Grafana dashboards without needing to parse logs.
 /// </summary>
 public sealed record AgentResponse
 {
-    public required string Answer       { get; init; }
-    public required string[] Sources    { get; init; }
-    public required float    Confidence { get; init; }  // 0.0 – 1.0
-    public required string[] ToolsUsed  { get; init; }
+    [JsonPropertyName("answer")]
+    public required string Answer { get; init; }
+
+    [JsonPropertyName("sources")]
+    public string[] Sources { get; init; } = [];
+
+    [JsonPropertyName("confidence")]
+    public required float Confidence { get; init; }  // 0.0 – 1.0
+
+    /// <summary>Omitted in model JSON deserializes as an empty array.</summary>
+    [JsonPropertyName("tools_used")]
+    public string[] ToolsUsed { get; init; } = [];
 
     /// <summary>True when the response was served from the semantic cache.</summary>
     public bool FromCache { get; init; }

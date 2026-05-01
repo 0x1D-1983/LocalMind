@@ -385,6 +385,9 @@ public sealed class Agent
 
         Rules:
         - Use the available tools to gather facts before answering.
+        - For questions about documentation, lore, internal write-ups, or anything that could appear in ingested files,
+          call search_knowledge_base first (often with top_k 8–10). Newly ingested documents are only visible through
+          that tool — do not rely on memory from earlier in the chat for KB content.
         - If multiple tools give independent information, combine them in your answer.
         - If you cannot answer, set confidence to 0.0 and explain in "answer".
         - Never invent data — only report what the tools return.
