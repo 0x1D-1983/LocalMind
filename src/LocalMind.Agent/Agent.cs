@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics;
 using System.Text.Json;
-using LocalMind.Ollama;
 using LocalMind.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -39,9 +38,9 @@ public sealed class Agent
         IOptions<AgentOptions> options,
         ILogger<Agent> logger,
         IStructuredOutputParser structuredOutputParser,
-        IOllamaApiClientFactory ollamaApiClientFactory)
+        OllamaApiClient ollama)
     {
-        _ollama = ollamaApiClientFactory.CreateClient();
+        _ollama = ollama;
         _executor = executor;
         _manifest = manifest;
         _cache    = cache;

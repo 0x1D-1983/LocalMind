@@ -22,11 +22,11 @@ public sealed class KnowledgeSearchTool : ITool
     private readonly ILogger<KnowledgeSearchTool> _logger;
 
     public KnowledgeSearchTool(
-        IOllamaApiClientFactory ollamaApiClientFactory,
+        OllamaApiClient ollama,
         IQdrantClientFactory qdrantClientFactory,
         ILogger<KnowledgeSearchTool> logger)
     {
-        _ollama = ollamaApiClientFactory.CreateClient();
+        _ollama = ollama;
         _qdrant = qdrantClientFactory.CreateClient();
         _logger = logger;
     }

@@ -28,11 +28,11 @@ public sealed class StructuredOutputParser : IStructuredOutputParser
     };
 
     public StructuredOutputParser(
-        IOllamaApiClientFactory ollamaApiClientFactory,
+        OllamaApiClient ollama,
         IOptions<AgentOptions> options,
         ILogger<StructuredOutputParser> logger)
     {
-        _ollama = ollamaApiClientFactory.CreateClient();
+        _ollama = ollama;
         _options = options.Value;
         _logger = logger;
     }

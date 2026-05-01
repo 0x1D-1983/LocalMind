@@ -31,40 +31,14 @@ internal sealed class AgentResponseValidationException(string message)
 
 public static class AgentServiceExtensions
 {
-    /// <summary>
-    /// Registers the Agent and its options.
-    ///
-    /// Full wiring in Program.cs:
-    ///
-    ///   var builder = WebApplication.CreateBuilder(args);  // or Host.CreateApplicationBuilder
-    ///
-    ///   builder.Services
-    ///       // Ollama client
-    ///       .AddSingleton(_ => new OllamaApiClient(new Uri("http://localhost:11434")))
-    ///
-    ///       // Tool layer (from previous phase)
-    ///       .AddToolInfrastructure()
-    ///       .AddTool&lt;KnowledgeSearchTool&gt;()
-    ///       .AddTool&lt;DatabaseQueryTool&gt;()
-    ///       .AddTool&lt;CalculatorTool&gt;()
-    ///
-    ///       // Cache (Phase 4)
-    ///       .AddSingleton&lt;SemanticCache&gt;()
-    ///
-    ///       // Agent
-    ///       .AddAgent(builder.Configuration);
-    ///
-    /// </summary>
-    public static IServiceCollection AddAgent(
-        this IServiceCollection services,
-        IConfiguration configuration)
+    public static IServiceCollection AddAgent(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<AgentOptions>(
-            configuration.GetSection(AgentOptions.SectionName));
+            configuration.GetSection(AgentOptions.SectionName)).AddOptionsWithValidateOnStart<AgentOptions>();
+
+        services.AddOllama(configuration);
 
         services.AddSingleton<IStructuredOutputParser, StructuredOutputParser>();
-        services.AddSingleton<IOllamaApiClientFactory, OllamaApiClientFactory>();
-
         services.AddSingleton<Agent>();
 
         return services;
