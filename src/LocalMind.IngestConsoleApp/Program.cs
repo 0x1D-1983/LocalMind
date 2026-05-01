@@ -1,9 +1,11 @@
 ﻿using CommandLine;
 using LocalMind.Ingestion;
+using LocalMind.Ollama;
+using LocalMind.Qdrant;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using OllamaSharp;
-using Qdrant.Client;
+using Microsoft.Extensions.Options;
 using Qdrant.Client.Grpc;
 using Serilog;
 
@@ -52,34 +54,30 @@ internal static class Program
 
         try
         {
-            var ollamaOptions = configuration
-                .GetSection(OllamaApiClientOptions.SectionName)
-                .Get<OllamaApiClientOptions>();
-            var qdrantOptions = configuration
-                .GetSection(QdrantClientOptions.SectionName)
-                .Get<QdrantClientOptions>();
+            var services = new ServiceCollection();
+            services.AddSingleton<ILoggerFactory>(loggerFactory);
+            services.AddOllama(configuration);
+            services.AddQdrant(configuration);
 
-            if (ollamaOptions is null || string.IsNullOrWhiteSpace(ollamaOptions.BaseUrl))
+            using var provider = services.BuildServiceProvider();
+
+            var ollamaOpts = provider.GetRequiredService<IOptions<OllamaApiClientOptions>>().Value;
+            var qdrantOpts = provider.GetRequiredService<IOptions<QdrantClientOptions>>().Value;
+
+            if (string.IsNullOrWhiteSpace(ollamaOpts.BaseUrl))
             {
                 Log.Error("Missing or invalid '{Section}' configuration.", OllamaApiClientOptions.SectionName);
                 return 1;
             }
 
-            if (qdrantOptions is null || string.IsNullOrWhiteSpace(qdrantOptions.Host))
+            if (string.IsNullOrWhiteSpace(qdrantOpts.Host))
             {
                 Log.Error("Missing or invalid '{Section}' configuration.", QdrantClientOptions.SectionName);
                 return 1;
             }
 
-            using var qdrant = new QdrantClient(
-                qdrantOptions.Host,
-                qdrantOptions.Port,
-                qdrantOptions.Https,
-                qdrantOptions.ApiKey ?? string.Empty,
-                qdrantOptions.GrpcTimeout,
-                loggerFactory);
-
-            var ollama = new OllamaApiClient(new Uri(ollamaOptions.BaseUrl));
+            var ollama = provider.GetRequiredService<IOllamaApiClientFactory>().CreateClient();
+            using var qdrant = provider.GetRequiredService<IQdrantClientFactory>().CreateClient();
 
             if (!await qdrant.CollectionExistsAsync(CollectionName))
             {

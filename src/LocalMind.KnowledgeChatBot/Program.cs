@@ -2,12 +2,9 @@
 using LocalMind.Ollama;
 using LocalMind.Qdrant;
 using LocalMind.Tools;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OllamaSharp;
-using Qdrant.Client;
 using Serilog;
 
 // Class and namespace are both named Agent; unqualified `Agent` resolves to the namespace here.
