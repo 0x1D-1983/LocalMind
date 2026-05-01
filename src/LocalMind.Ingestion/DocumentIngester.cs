@@ -7,7 +7,7 @@ using Qdrant.Client.Grpc;
 namespace LocalMind.Ingestion;
 
 // DocumentIngester.cs
-public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant)
+public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant, string collectionName)
 {
     /// <summary>Target size for sub-chunks inside a long paragraph.</summary>
     private const int ChunkSize = 480;
@@ -35,7 +35,7 @@ public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant)
 
             var vector = embedding.Embeddings[0];
 
-            await qdrant.UpsertAsync("knowledge", [
+            await qdrant.UpsertAsync(collectionName, [
                 new PointStruct {
                     Id = new PointId { Uuid = Guid.NewGuid().ToString() },
                     Vectors = vector,

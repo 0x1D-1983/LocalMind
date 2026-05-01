@@ -13,10 +13,6 @@ namespace LocalMind.IngestConsoleApp;
 
 internal static class Program
 {
-    private const string CollectionName = "knowledge";
-    /// <summary>Vector size for <c>nomic-embed-text</c> (Ollama default).</summary>
-    private const uint EmbeddingDimensions = 768;
-
     public static async Task<int> Main(string[] args)
     {
         var configuration = new ConfigurationBuilder()
@@ -58,11 +54,14 @@ internal static class Program
             services.AddSingleton<ILoggerFactory>(loggerFactory);
             services.AddOllama(configuration);
             services.AddQdrant(configuration);
+            services.Configure<KnowledgeIngestOptions>(
+                configuration.GetSection(KnowledgeIngestOptions.SectionName));
 
             using var provider = services.BuildServiceProvider();
 
             var ollamaOpts = provider.GetRequiredService<IOptions<OllamaApiClientOptions>>().Value;
             var qdrantOpts = provider.GetRequiredService<IOptions<QdrantClientOptions>>().Value;
+            var ingestOpts = provider.GetRequiredService<IOptions<KnowledgeIngestOptions>>().Value;
 
             if (string.IsNullOrWhiteSpace(ollamaOpts.BaseUrl))
             {
@@ -76,20 +75,33 @@ internal static class Program
                 return 1;
             }
 
+            if (string.IsNullOrWhiteSpace(ingestOpts.CollectionName))
+            {
+                Log.Error("Missing or invalid '{Section}:CollectionName'.", KnowledgeIngestOptions.SectionName);
+                return 1;
+            }
+
+            if (ingestOpts.EmbeddingDimensions == 0)
+            {
+                Log.Error("'{Section}:EmbeddingDimensions' must be greater than zero.", KnowledgeIngestOptions.SectionName);
+                return 1;
+            }
+
             var ollama = provider.GetRequiredService<IOllamaApiClientFactory>().CreateClient();
             using var qdrant = provider.GetRequiredService<IQdrantClientFactory>().CreateClient();
 
-            if (!await qdrant.CollectionExistsAsync(CollectionName))
+            var collectionName = ingestOpts.CollectionName;
+            if (!await qdrant.CollectionExistsAsync(collectionName))
             {
-                Log.Information("Creating Qdrant collection {CollectionName}", CollectionName);
-                await qdrant.CreateCollectionAsync(CollectionName, new VectorParams
+                Log.Information("Creating Qdrant collection {CollectionName}", collectionName);
+                await qdrant.CreateCollectionAsync(collectionName, new VectorParams
                 {
-                    Size = EmbeddingDimensions,
+                    Size = ingestOpts.EmbeddingDimensions,
                     Distance = Distance.Cosine
                 });
             }
 
-            var ingester = new DocumentIngester(ollama, qdrant);
+            var ingester = new DocumentIngester(ollama, qdrant, collectionName);
             await ingester.IngestAsync(path);
             Log.Information("Ingested: {Path}", path);
             return 0;
@@ -99,11 +111,5 @@ internal static class Program
             Log.Error(ex, "Ingest failed");
             return 1;
         }
-    }
-
-    private sealed class CommandLineOptions
-    {
-        [Option('d', "document", Required = true, HelpText = "Path to the document file to ingest.")]
-        public string DocumentPath { get; set; } = "";
     }
 }
