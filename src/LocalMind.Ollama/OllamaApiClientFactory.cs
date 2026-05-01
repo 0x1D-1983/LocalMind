@@ -13,9 +13,9 @@ public sealed class OllamaApiClientFactory : IOllamaApiClientFactory
     private readonly OllamaApiClient _client;
     private readonly OllamaApiClientOptions _ollamaApiClientOptions;
 
-    public OllamaApiClientFactory(IOptionsMonitor<OllamaApiClientOptions> ollamaApiClientOptions)
+    public OllamaApiClientFactory(IOptions<OllamaApiClientOptions> ollamaApiClientOptions)
     {
-        _ollamaApiClientOptions = ollamaApiClientOptions.CurrentValue;
+        _ollamaApiClientOptions = ollamaApiClientOptions.Value;
         _client = new OllamaApiClient(new Uri(_ollamaApiClientOptions.BaseUrl));
     }
 

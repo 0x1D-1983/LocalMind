@@ -14,10 +14,10 @@ public sealed class QdrantClientFactory : IQdrantClientFactory
     private readonly QdrantClientOptions _qdrantClientOptions;
 
     public QdrantClientFactory(
-        IOptionsMonitor<QdrantClientOptions> qdrantClientOptions,
+        IOptions<QdrantClientOptions> qdrantClientOptions,
         ILoggerFactory loggerFactory)
     {
-        _qdrantClientOptions = qdrantClientOptions.CurrentValue;
+        _qdrantClientOptions = qdrantClientOptions.Value;
         _client = new QdrantClient(
             _qdrantClientOptions.Host,
             _qdrantClientOptions.Port,
