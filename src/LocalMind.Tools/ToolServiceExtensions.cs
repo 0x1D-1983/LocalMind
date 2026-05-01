@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using LocalMind.Ollama;
+using LocalMind.Qdrant;
 
 namespace LocalMind.Tools;
 
@@ -24,6 +26,8 @@ public static class ToolServiceExtensions
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<ToolExecutor>();
         services.AddSingleton<ToolManifestBuilder>();
+        services.AddSingleton<IOllamaApiClientFactory, OllamaApiClientFactory>();
+        services.AddSingleton<IQdrantClientFactory, QdrantClientFactory>();
         return services;
     }
 

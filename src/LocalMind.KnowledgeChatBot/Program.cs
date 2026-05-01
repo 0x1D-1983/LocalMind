@@ -1,7 +1,7 @@
 ﻿using LocalMind.Agent;
+using LocalMind.Ollama;
+using LocalMind.Qdrant;
 using LocalMind.Tools;
-// Class and namespace are both named Agent; unqualified `Agent` resolves to the namespace here.
-using AgentApp = LocalMind.Agent.Agent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -9,6 +9,9 @@ using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using Qdrant.Client;
 using Serilog;
+
+// Class and namespace are both named Agent; unqualified `Agent` resolves to the namespace here.
+using AgentApp = LocalMind.Agent.Agent;
 
 namespace LocalMind.KnowledgeChatBot;
 
@@ -29,34 +32,9 @@ internal static class Program
 
         try
         {
-            builder.Services.AddSingleton(sp =>
-            {
-                var cfg = sp.GetRequiredService<IConfiguration>();
-                var o = cfg.GetSection(OllamaApiClientOptions.SectionName).Get<OllamaApiClientOptions>()
-                    ?? throw new InvalidOperationException($"Missing '{OllamaApiClientOptions.SectionName}' configuration.");
-                if (string.IsNullOrWhiteSpace(o.BaseUrl))
-                    throw new InvalidOperationException($"Missing Ollama:BaseUrl.");
-                return new OllamaApiClient(new Uri(o.BaseUrl));
-            });
-
-            builder.Services.AddSingleton(sp =>
-            {
-                var cfg = sp.GetRequiredService<IConfiguration>();
-                var o = cfg.GetSection(QdrantClientOptions.SectionName).Get<QdrantClientOptions>()
-                    ?? throw new InvalidOperationException($"Missing '{QdrantClientOptions.SectionName}' configuration.");
-                if (string.IsNullOrWhiteSpace(o.Host))
-                    throw new InvalidOperationException("Missing Qdrant:Host.");
-                var log = sp.GetRequiredService<ILoggerFactory>();
-                return new QdrantClient(
-                    o.Host,
-                    o.Port,
-                    o.Https,
-                    o.ApiKey ?? string.Empty,
-                    o.GrpcTimeout,
-                    log);
-            });
-
             builder.Services
+                .AddOllama(builder.Configuration)
+                .AddQdrant(builder.Configuration)
                 .AddToolInfrastructure()
                 .AddTool<KnowledgeSearchTool>();
 

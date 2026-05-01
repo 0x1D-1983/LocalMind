@@ -5,6 +5,8 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LocalMind.Ollama;
+using LocalMind.Qdrant;
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using OllamaSharp.Models;
@@ -13,11 +15,22 @@ using Qdrant.Client.Grpc;
 
 namespace LocalMind.Tools;
 
-public sealed class KnowledgeSearchTool(
-    OllamaApiClient ollama,
-    QdrantClient qdrant,
-    ILogger<KnowledgeSearchTool> logger) : ITool
+public sealed class KnowledgeSearchTool : ITool
 {
+    private readonly OllamaApiClient _ollama;
+    private readonly QdrantClient _qdrant;
+    private readonly ILogger<KnowledgeSearchTool> _logger;
+
+    public KnowledgeSearchTool(
+        IOllamaApiClientFactory ollamaApiClientFactory,
+        IQdrantClientFactory qdrantClientFactory,
+        ILogger<KnowledgeSearchTool> logger)
+    {
+        _ollama = ollamaApiClientFactory.CreateClient();
+        _qdrant = qdrantClientFactory.CreateClient();
+        _logger = logger;
+    }
+
     private const string CollectionName = "knowledge";
     private const string EmbedModel = "nomic-embed-text";
 
@@ -87,13 +100,13 @@ public sealed class KnowledgeSearchTool(
                 ? $"{queryText}\nbiography family parents relatives early life background"
                 : queryText;
 
-            var embed = await ollama.EmbedAsync(
+            var embed = await _ollama.EmbedAsync(
                 new EmbedRequest { Model = EmbedModel, Input = [embedQuery] },
                 ct);
 
             var vector = embed.Embeddings[0];
             // Request payload explicitly — default selector can omit payload fields, which makes chunks look empty to the model.
-            var hits = await qdrant.SearchAsync(
+            var hits = await _qdrant.SearchAsync(
                 CollectionName,
                 vector,
                 limit: (ulong)topK,
@@ -123,20 +136,20 @@ public sealed class KnowledgeSearchTool(
             var json = JsonSerializer.Serialize(results);
             if (results.Count > 0)
             {
-                logger.LogInformation(
+                _logger.LogInformation(
                     "Knowledge search: {Count} chunk(s); top filename={File} score={Score:F4}",
                     results.Count,
                     results[0].filename,
                     results[0].score);
             }
             else
-                logger.LogWarning("Knowledge search returned no hits for query (length {Len})", queryText.Length);
+                _logger.LogWarning("Knowledge search returned no hits for query (length {Len})", queryText.Length);
             return ToolResult.Ok(Name, json, sw.Elapsed);
         }
         catch (Exception ex)
         {
             sw.Stop();
-            logger.LogError(ex, "Knowledge search failed");
+            _logger.LogError(ex, "Knowledge search failed");
             return ToolResult.Fail(Name, ex.Message, sw.Elapsed);
         }
     }

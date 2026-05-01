@@ -1,4 +1,4 @@
-namespace LocalMind.KnowledgeChatBot;
+namespace LocalMind.Ollama;
 
 public sealed class OllamaApiClientOptions
 {

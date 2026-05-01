@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using LocalMind.Ollama;
 
 namespace LocalMind.Agent;
 
@@ -60,6 +61,9 @@ public static class AgentServiceExtensions
     {
         services.Configure<AgentOptions>(
             configuration.GetSection(AgentOptions.SectionName));
+
+        services.AddSingleton<IStructuredOutputParser, StructuredOutputParser>();
+        services.AddSingleton<IOllamaApiClientFactory, OllamaApiClientFactory>();
 
         services.AddSingleton<Agent>();
 

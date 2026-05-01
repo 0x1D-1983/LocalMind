@@ -7,7 +7,7 @@ public static class Prompts
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Builds the system prompt. Called once at construction and cached.
+    /// The system prompt is built once at construction time and reused on every call.
     ///
     /// Design rules:
     ///   1. Be explicit about the JSON schema — include the exact field names and types.
@@ -15,6 +15,10 @@ public static class Prompts
     ///      follow "don't do X" instructions more reliably than "only do Y".
     ///   3. Keep this identical on every call — it's the stable prefix that
     ///      benefits from the model's KV cache.
+    ///
+    /// WHY THIS MATTERS FOR PERFORMANCE (Phase 5 of the project):
+    /// Ollama (via llama.cpp) maintains a KV cache. If the start of the prompt is
+    /// identical across calls, the model skips re-computing those tokens. By keeping the system prompt stable, we get free prefix caching on every call after the first.
     /// </summary>
     public static string SystemPrompt => """
         You are a technical assistant with access to a local knowledge base and database.

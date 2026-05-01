@@ -1,4 +1,4 @@
-namespace LocalMind.KnowledgeChatBot;
+namespace LocalMind.Qdrant;
 
 public sealed class QdrantClientOptions
 {
