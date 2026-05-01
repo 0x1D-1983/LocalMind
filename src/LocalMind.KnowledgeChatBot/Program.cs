@@ -32,7 +32,7 @@ internal static class Program
             builder.Services
                 .AddOllama(builder.Configuration)
                 .AddQdrant(builder.Configuration)
-                .AddToolInfrastructure()
+                .AddToolInfrastructure(builder.Configuration)
                 .AddTool<KnowledgeSearchTool>();
 
             builder.Services.AddSingleton<SemanticCache>();

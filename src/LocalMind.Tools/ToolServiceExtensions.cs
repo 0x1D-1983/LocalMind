@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using LocalMind.Ollama;
 using LocalMind.Qdrant;
+using Microsoft.Extensions.Configuration;
 
 namespace LocalMind.Tools;
 
@@ -10,23 +11,14 @@ namespace LocalMind.Tools;
 
 public static class ToolServiceExtensions
 {
-    /// <summary>
-    /// Registers the tool infrastructure.
-    /// Add individual ITool implementations via AddTool&lt;T&gt;() after calling this.
-    ///
-    /// Usage in Program.cs:
-    ///   builder.Services
-    ///       .AddToolInfrastructure()
-    ///       .AddTool&lt;KnowledgeSearchTool&gt;()
-    ///       .AddTool&lt;DatabaseQueryTool&gt;()
-    ///       .AddTool&lt;CalculatorTool&gt;();
-    /// </summary>
-    public static IServiceCollection AddToolInfrastructure(this IServiceCollection services)
+    public static IServiceCollection AddToolInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<ToolExecutor>();
         services.AddSingleton<ToolManifestBuilder>();
-        services.AddSingleton<IQdrantClientFactory, QdrantClientFactory>();
+        services.AddOllama(configuration);
+        services.AddQdrant(configuration);
+
         return services;
     }
 

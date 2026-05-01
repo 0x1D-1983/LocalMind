@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
+using Qdrant.Client;
 using Qdrant.Client.Grpc;
 using Serilog;
 
@@ -89,7 +90,7 @@ internal static class Program
             }
 
             var ollama = provider.GetRequiredService<OllamaApiClient>();
-            using var qdrant = provider.GetRequiredService<IQdrantClientFactory>().CreateClient();
+            using var qdrant = provider.GetRequiredService<QdrantClient>();
 
             var collectionName = ingestOpts.CollectionName;
             if (!await qdrant.CollectionExistsAsync(collectionName))

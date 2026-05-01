@@ -5,8 +5,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using LocalMind.Ollama;
-using LocalMind.Qdrant;
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using OllamaSharp.Models;
@@ -23,11 +21,11 @@ public sealed class KnowledgeSearchTool : ITool
 
     public KnowledgeSearchTool(
         OllamaApiClient ollama,
-        IQdrantClientFactory qdrantClientFactory,
+        QdrantClient qdrant,
         ILogger<KnowledgeSearchTool> logger)
     {
         _ollama = ollama;
-        _qdrant = qdrantClientFactory.CreateClient();
+        _qdrant = qdrant;
         _logger = logger;
     }
 
