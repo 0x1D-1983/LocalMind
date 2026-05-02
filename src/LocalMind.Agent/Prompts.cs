@@ -48,6 +48,6 @@ public static class Prompts
           0.0 = unable to answer.
 
         Example valid response:
-        {"answer":"The payments team owns 3 services with SLAs under 200ms.","sources":["services table"],"confidence":0.95,"tools_used":["query_database"]}
+        {"answer":"Jean Grey is a Marvel Comics character and member of the X-Men, known for her connection to the Phoenix Force.","sources":["x-men.md"],"confidence":0.95,"tools_used":["search_knowledge_base"]}
         """;
 }
