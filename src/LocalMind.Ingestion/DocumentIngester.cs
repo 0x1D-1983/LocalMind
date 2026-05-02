@@ -3,22 +3,26 @@ using OllamaSharp;
 using OllamaSharp.Models;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
+using Microsoft.Extensions.Logging;
 
 namespace LocalMind.Ingestion;
 
-// DocumentIngester.cs
-public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant, string collectionName)
+public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant, DocumentIngestOptions ingestOpts, ILogger<DocumentIngester> logger)
 {
-    /// <summary>Target size for sub-chunks inside a long paragraph.</summary>
-    private const int ChunkSize = 480;
-
-    /// <summary>Larger overlap keeps facts (e.g. names in one sentence) duplicated across adjacent vectors for better recall.</summary>
-    private const int Overlap = 160;
-
     public async Task IngestAsync(string filePath)
     {
+        if (!await qdrant.CollectionExistsAsync(ingestOpts.CollectionName))
+        {
+            logger.LogInformation("Creating Qdrant collection {CollectionName}", ingestOpts.CollectionName);
+            await qdrant.CreateCollectionAsync(ingestOpts.CollectionName, new VectorParams
+            {
+                Size = ingestOpts.EmbeddingDimensions,
+                Distance = Distance.Cosine
+            });
+        }
+
         var text = await File.ReadAllTextAsync(filePath);
-        var chunks = ChunkByParagraphs(text, ChunkSize, Overlap).ToList();
+        var chunks = ChunkByParagraphs(text, ingestOpts.ChunkSize, ingestOpts.Overlap).ToList();
         var docLabel = Path.GetFileName(filePath);
 
         foreach (var (chunk, index) in chunks.Select((c, i) => (c, i)))
@@ -29,13 +33,13 @@ public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant, strin
 
             var embedding = await ollama.EmbedAsync(
                 new EmbedRequest {
-                    Model = "nomic-embed-text",
+                    Model = ingestOpts.EmbeddingModel,
                     Input = [embedText]
                 });
 
             var vector = embedding.Embeddings[0];
 
-            await qdrant.UpsertAsync(collectionName, [
+            await qdrant.UpsertAsync(ingestOpts.CollectionName, [
                 new PointStruct {
                     Id = new PointId { Uuid = Guid.NewGuid().ToString() },
                     Vectors = vector,
@@ -93,4 +97,6 @@ public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant, strin
                 yield break;
         }
     }
+
+
 }
