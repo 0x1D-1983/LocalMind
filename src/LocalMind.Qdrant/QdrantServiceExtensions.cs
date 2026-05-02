@@ -10,8 +10,10 @@ public static class QdrantServiceExtensions
 {
     public static IServiceCollection AddQdrant(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<QdrantClientOptions>(
-            configuration.GetSection(QdrantClientOptions.SectionName)).AddOptionsWithValidateOnStart<QdrantClientOptions>();
+        services.AddOptions<QdrantClientOptions>()
+            .Bind(configuration.GetSection(QdrantClientOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         services.AddSingleton(sp =>
         {

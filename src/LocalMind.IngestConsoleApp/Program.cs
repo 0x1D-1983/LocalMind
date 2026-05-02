@@ -56,14 +56,13 @@ internal static class Program
             services.AddSingleton<ILoggerFactory>(loggerFactory);
             services.AddOllama(configuration);
             services.AddQdrant(configuration);
-            services.Configure<KnowledgeIngestOptions>(
-                configuration.GetSection(KnowledgeIngestOptions.SectionName));
+            services.AddDocumentIngester(configuration);
 
             using var provider = services.BuildServiceProvider();
 
             var ollamaOpts = provider.GetRequiredService<IOptions<OllamaApiClientOptions>>().Value;
             var qdrantOpts = provider.GetRequiredService<IOptions<QdrantClientOptions>>().Value;
-            var ingestOpts = provider.GetRequiredService<IOptions<KnowledgeIngestOptions>>().Value;
+            var ingestOpts = provider.GetRequiredService<IOptions<DocumentIngestOptions>>().Value;
 
             if (string.IsNullOrWhiteSpace(ollamaOpts.BaseUrl))
             {
@@ -79,13 +78,19 @@ internal static class Program
 
             if (string.IsNullOrWhiteSpace(ingestOpts.CollectionName))
             {
-                Log.Error("Missing or invalid '{Section}:CollectionName'.", KnowledgeIngestOptions.SectionName);
+                Log.Error("Missing or invalid '{Section}:CollectionName'.", DocumentIngestOptions.SectionName);
+                return 1;
+            }
+
+            if (string.IsNullOrWhiteSpace(ingestOpts.EmbeddingModel))
+            {
+                Log.Error("Missing or invalid '{Section}:EmbeddingModel'.", DocumentIngestOptions.SectionName);
                 return 1;
             }
 
             if (ingestOpts.EmbeddingDimensions == 0)
             {
-                Log.Error("'{Section}:EmbeddingDimensions' must be greater than zero.", KnowledgeIngestOptions.SectionName);
+                Log.Error("'{Section}:EmbeddingDimensions' must be greater than zero.", DocumentIngestOptions.SectionName);
                 return 1;
             }
 

@@ -16,8 +16,6 @@ public static class ToolServiceExtensions
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<ToolExecutor>();
         services.AddSingleton<ToolManifestBuilder>();
-        services.AddOllama(configuration);
-        services.AddQdrant(configuration);
 
         return services;
     }

@@ -33,10 +33,10 @@ public static class AgentServiceExtensions
 {
     public static IServiceCollection AddAgent(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<AgentOptions>(
-            configuration.GetSection(AgentOptions.SectionName)).AddOptionsWithValidateOnStart<AgentOptions>();
-
-        services.AddOllama(configuration);
+        services.AddOptions<AgentOptions>()
+            .Bind(configuration.GetSection(AgentOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         services.AddSingleton<IConversationStore, InMemoryConversationStore>();
         services.AddSingleton<IStructuredOutputParser, StructuredOutputParser>();

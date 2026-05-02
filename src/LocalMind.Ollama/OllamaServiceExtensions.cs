@@ -9,8 +9,10 @@ public static class OllamaServiceExtensions
 {
     public static IServiceCollection AddOllama(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<OllamaApiClientOptions>(
-            configuration.GetSection(OllamaApiClientOptions.SectionName)).AddOptionsWithValidateOnStart<OllamaApiClientOptions>();
+        services.AddOptions<OllamaApiClientOptions>()
+            .Bind(configuration.GetSection(OllamaApiClientOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         services.AddHttpClient("ollama", (sp, client) =>
         {

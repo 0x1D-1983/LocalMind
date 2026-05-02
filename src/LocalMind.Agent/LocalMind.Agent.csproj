@@ -18,7 +18,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LocalMind.Tools\LocalMind.Tools.csproj" />
-    <ProjectReference Include="..\LocalMind.Cache\LocalMind.Cache.csproj" />
     <ProjectReference Include="..\LocalMind.Ollama\LocalMind.Ollama.csproj" />
   </ItemGroup>
 
