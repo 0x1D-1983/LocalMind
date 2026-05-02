@@ -30,15 +30,17 @@ public sealed class Agent
     private readonly AgentOptions _options;
     private readonly ILogger<Agent> _logger;
     private readonly IStructuredOutputParser _structuredOutputParser;
+    private readonly IConversationStore _conversationStore;
 
     public Agent(
+        OllamaApiClient ollama,
         ToolExecutor executor,
         ToolManifestBuilder manifest,
+        IConversationStore conversationStore,
         SemanticCache cache,
         IOptions<AgentOptions> options,
         ILogger<Agent> logger,
-        IStructuredOutputParser structuredOutputParser,
-        OllamaApiClient ollama)
+        IStructuredOutputParser structuredOutputParser)
     {
         _ollama = ollama;
         _executor = executor;
@@ -47,6 +49,7 @@ public sealed class Agent
         _options  = options.Value;
         _logger   = logger;
         _structuredOutputParser = structuredOutputParser;
+        _conversationStore = conversationStore;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -54,12 +57,13 @@ public sealed class Agent
     // ─────────────────────────────────────────────────────────────────────────
 
     public async Task<AgentResponse> RunAsync(
+        string sessionId,
         string userQuery,
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
 
-        _logger.LogInformation("Agent query started: {Query}", userQuery);
+        _logger.LogInformation("Agent query started: SessionId: {SessionId}, Query: {Query}", sessionId, userQuery);
 
         // ── Phase 1: Semantic cache ───────────────────────────────────────────
         // Check before touching the model — a cache hit costs only one embedding
@@ -83,11 +87,19 @@ public sealed class Agent
         //
         // Tool definitions go in the ChatRequest.Tools field, not inline in the
         // system prompt, so Ollama handles their serialisation format correctly.
-        var history = new List<Message>
+        
+        // Load persisted turns, slot them between system prompt and current user message
+        var persistedTurns = await _conversationStore.GetAsync(sessionId, ct);
+
+        var userMessage = new Message(ChatRole.User, userQuery);
+
+        var history = new List<Message>(persistedTurns.Count + 2)
         {
-            new(ChatRole.System, Prompts.SystemPrompt),
-            new(ChatRole.User,   userQuery)
+            new(ChatRole.System, Prompts.SystemPrompt)
         };
+
+        history.AddRange(persistedTurns);   // previous clean turns
+        history.Add(userMessage);            // this turn's user message
 
         var trace = new AgentTraceBuilder();
         var kbSourceFilesOrdered = new List<string>();
@@ -144,6 +156,13 @@ public sealed class Agent
                 // Store in semantic cache for future queries
                 if (_options.EnableSemanticCache)
                     await _cache.SetAsync(userQuery, response, ct);
+
+                // Persist only the clean user/assistant pair
+                await _conversationStore.AppendTurnAsync(
+                    sessionId,
+                    userMessage,
+                    new Message(ChatRole.Assistant, llmResponse.Message.Content ?? string.Empty),
+                    ct);
 
                 return response;
             }

@@ -54,6 +54,9 @@ internal static class Program
 
             try
             {
+                var sessionId = Guid.NewGuid().ToString("N"); // one per console session
+                logger.LogInformation("SessionId: {SessionId}", sessionId);
+
                 while (!cts.IsCancellationRequested)
                 {
                     Console.Write("> ");
@@ -70,7 +73,7 @@ internal static class Program
 
                     try
                     {
-                        var response = await agent.RunAsync(trimmed, cts.Token);
+                        var response = await agent.RunAsync(sessionId, trimmed, cts.Token);
                         Console.WriteLine();
                         Console.WriteLine(response.Answer);
                         if (response.Sources.Length > 0)

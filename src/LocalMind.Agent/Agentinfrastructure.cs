@@ -38,6 +38,7 @@ public static class AgentServiceExtensions
 
         services.AddOllama(configuration);
 
+        services.AddSingleton<IConversationStore, InMemoryConversationStore>();
         services.AddSingleton<IStructuredOutputParser, StructuredOutputParser>();
         services.AddSingleton<Agent>();
 

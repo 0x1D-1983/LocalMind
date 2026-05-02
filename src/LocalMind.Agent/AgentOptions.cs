@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace LocalMind.Agent;
 
 /// <summary>
@@ -47,4 +49,11 @@ public sealed class AgentOptions
 
     /// <summary>Set to false to bypass the semantic cache entirely (useful during development).</summary>
     public bool EnableSemanticCache { get; set; } = true;
+
+    /// <summary>
+    /// Number of user/assistant turn pairs to retain per session.
+    /// Older turns are evicted (sliding window).
+    /// </summary>
+    [Range(1, 100)]
+    public int MaxConversationTurns { get; set; } = 20;
 }
