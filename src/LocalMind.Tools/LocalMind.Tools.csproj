@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LocalMind.Ollama\LocalMind.Ollama.csproj" />
     <ProjectReference Include="..\LocalMind.Qdrant\LocalMind.Qdrant.csproj" />
+    <ProjectReference Include="..\LocalMind.Ingestion\LocalMind.Ingestion.csproj" />
   </ItemGroup>
 
 </Project>

@@ -7,22 +7,27 @@ using Microsoft.Extensions.Logging;
 
 namespace LocalMind.Ingestion;
 
-public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant, DocumentIngestOptions ingestOpts, ILogger<DocumentIngester> logger)
+public class DocumentIngester(
+    OllamaApiClient ollama,
+    QdrantClient qdrant,
+    KnowledgeBaseOptions knowledgeBase,
+    DocumentIngestOptions chunkOpts,
+    ILogger<DocumentIngester> logger)
 {
     public async Task IngestAsync(string filePath)
     {
-        if (!await qdrant.CollectionExistsAsync(ingestOpts.CollectionName))
+        if (!await qdrant.CollectionExistsAsync(knowledgeBase.CollectionName))
         {
-            logger.LogInformation("Creating Qdrant collection {CollectionName}", ingestOpts.CollectionName);
-            await qdrant.CreateCollectionAsync(ingestOpts.CollectionName, new VectorParams
+            logger.LogInformation("Creating Qdrant collection {CollectionName}", knowledgeBase.CollectionName);
+            await qdrant.CreateCollectionAsync(knowledgeBase.CollectionName, new VectorParams
             {
-                Size = ingestOpts.EmbeddingDimensions,
+                Size = knowledgeBase.EmbeddingDimensions,
                 Distance = Distance.Cosine
             });
         }
 
         var text = await File.ReadAllTextAsync(filePath);
-        var chunks = ChunkByParagraphs(text, ingestOpts.ChunkSize, ingestOpts.Overlap).ToList();
+        var chunks = ChunkByParagraphs(text, chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
         var docLabel = Path.GetFileName(filePath);
 
         foreach (var (chunk, index) in chunks.Select((c, i) => (c, i)))
@@ -33,13 +38,13 @@ public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant, Docum
 
             var embedding = await ollama.EmbedAsync(
                 new EmbedRequest {
-                    Model = ingestOpts.EmbeddingModel,
+                    Model = knowledgeBase.EmbeddingModel,
                     Input = [embedText]
                 });
 
             var vector = embedding.Embeddings[0];
 
-            await qdrant.UpsertAsync(ingestOpts.CollectionName, [
+            await qdrant.UpsertAsync(knowledgeBase.CollectionName, [
                 new PointStruct {
                     Id = new PointId { Uuid = Guid.NewGuid().ToString() },
                     Vectors = vector,
@@ -97,6 +102,4 @@ public class DocumentIngester(OllamaApiClient ollama, QdrantClient qdrant, Docum
                 yield break;
         }
     }
-
-
 }

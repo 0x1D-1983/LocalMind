@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LocalMind.Agent\LocalMind.Agent.csproj" />
+    <ProjectReference Include="..\LocalMind.Ingestion\LocalMind.Ingestion.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -41,7 +41,7 @@ dotnet build LocalMind.sln
 dotnet run --project src/LocalMind.IngestConsoleApp/LocalMind.IngestConsoleApp.csproj -- -d /path/to/your.md
 ```
 
-Configuration is loaded from `src/LocalMind.IngestConsoleApp/appsettings.json` (`DocumentIngest`, `Ollama`, `Qdrant`).
+Configuration is loaded from `src/LocalMind.IngestConsoleApp/appsettings.json` (`KnowledgeBase`, `DocumentIngest`, `Ollama`, `Qdrant`).
 
 **4. Run the knowledge chat console**
 
@@ -59,7 +59,7 @@ Type questions at the prompt; use `exit` or `quit` to leave. Ensure the chat mod
 | **LocalMind.IngestConsoleApp** | CLI to ingest a single file into Qdrant (chunk + embed + upsert) |
 | **LocalMind.Agent** | ReAct loop, structured JSON output parsing, traces, conversation store, semantic cache stub |
 | **LocalMind.Tools** | Tool registry, executor, manifests (`search_knowledge_base`, calculator, database stub, …) |
-| **LocalMind.Ingestion** | Document chunking, embedding via Ollama, Qdrant upsert; `DocumentIngestOptions` |
+| **LocalMind.Ingestion** | Document chunking, embedding via Ollama, Qdrant upsert; `KnowledgeBaseOptions` + `DocumentIngestOptions` |
 | **LocalMind.Ollama** | `OllamaApiClient` + `OllamaApiClientOptions` DI |
 | **LocalMind.Qdrant** | `QdrantClient` + `QdrantClientOptions` DI |
 
@@ -94,11 +94,11 @@ Each executable has its own `appsettings.json`. Common sections:
 
 Register in DI with `services.AddAgent(configuration)` (see `AgentServiceExtensions`).
 
-**Document ingest** (`DocumentIngestOptions`):
+**Knowledge base / vector index** (`KnowledgeBaseOptions` — used by ingest and `search_knowledge_base`):
 
 ```json
 {
-  "DocumentIngest": {
+  "KnowledgeBase": {
     "CollectionName": "knowledge",
     "EmbeddingModel": "nomic-embed-text",
     "EmbeddingDimensions": 768
@@ -106,13 +106,24 @@ Register in DI with `services.AddAgent(configuration)` (see `AgentServiceExtensi
 }
 ```
 
-The ingest app validates these at startup. The ingester currently uses a fixed embedding model in code for the Ollama call; keep it aligned with `EmbeddingModel` until that is wired through.
+**Document ingest (chunking only)** (`DocumentIngestOptions` — ingest console only):
+
+```json
+{
+  "DocumentIngest": {
+    "ChunkSize": 480,
+    "Overlap": 160
+  }
+}
+```
+
+The chat host binds `KnowledgeBase` only; the ingest app binds both sections. `EmbeddingModel` is part of the index contract (same collection and vector space as search), not a separate “ingest-only” knob.
 
 **Ollama** (`OllamaApiClientOptions`) and **Qdrant** (`QdrantClientOptions`): host, port, API key, timeouts — see sample `appsettings.json` files in each project.
 
 ### Options packages (class libraries)
 
-If you call `Configure<T>(IConfiguration)` or `OptionsBuilder.Bind(IConfiguration)` from a library project, reference **`Microsoft.Extensions.Options.ConfigurationExtensions`**. To enforce **`[Required]`** / **`[Range]`** at startup, add **`Microsoft.Extensions.Options.DataAnnotations`** and use `.ValidateDataAnnotations().ValidateOnStart()` on the options builder (the ingest project does this for `DocumentIngestOptions`).
+If you call `Configure<T>(IConfiguration)` or `OptionsBuilder.Bind(IConfiguration)` from a library project, reference **`Microsoft.Extensions.Options.ConfigurationExtensions`**. To enforce **`[Required]`** / **`[Range]`** at startup, add **`Microsoft.Extensions.Options.DataAnnotations`** and use `.ValidateDataAnnotations().ValidateOnStart()` on the options builder (the ingest project does this for `KnowledgeBaseOptions` and `DocumentIngestOptions`).
 
 ## Docker Compose
 

@@ -1,4 +1,5 @@
 ﻿using LocalMind.Agent;
+using LocalMind.Ingestion;
 using LocalMind.Ollama;
 using LocalMind.Qdrant;
 using LocalMind.Tools;
@@ -32,6 +33,7 @@ internal static class Program
             builder.Services
                 .AddOllama(builder.Configuration)
                 .AddQdrant(builder.Configuration)
+                .AddKnowledgeBaseOptions(builder.Configuration)
                 .AddToolInfrastructure(builder.Configuration)
                 .AddTool<KnowledgeSearchTool>();
 

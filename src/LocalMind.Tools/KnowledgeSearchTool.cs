@@ -1,7 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Knowledge base search (Qdrant + same embedding model as ingestion)
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -10,27 +6,20 @@ using OllamaSharp;
 using OllamaSharp.Models;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
+using LocalMind.Ingestion;
+using Microsoft.Extensions.Options;
 
 namespace LocalMind.Tools;
 
 public sealed class KnowledgeSearchTool : ITool
 {
+    private readonly ILogger<KnowledgeSearchTool> _logger;
     private readonly OllamaApiClient _ollama;
     private readonly QdrantClient _qdrant;
-    private readonly ILogger<KnowledgeSearchTool> _logger;
+    private readonly KnowledgeBaseOptions _knowledgeBase;
 
-    public KnowledgeSearchTool(
-        OllamaApiClient ollama,
-        QdrantClient qdrant,
-        ILogger<KnowledgeSearchTool> logger)
-    {
-        _ollama = ollama;
-        _qdrant = qdrant;
-        _logger = logger;
-    }
-
-    private const string CollectionName = "knowledge";
-    private const string EmbedModel = "nomic-embed-text";
+    public KnowledgeSearchTool(ILogger<KnowledgeSearchTool> logger, OllamaApiClient ollama, QdrantClient qdrant, IOptions<KnowledgeBaseOptions> knowledgeBase) =>
+    (_logger, _ollama, _qdrant, _knowledgeBase) = (logger, ollama, qdrant, knowledgeBase.Value);
 
     public string Name => "search_knowledge_base";
 
@@ -99,13 +88,13 @@ public sealed class KnowledgeSearchTool : ITool
                 : queryText;
 
             var embed = await _ollama.EmbedAsync(
-                new EmbedRequest { Model = EmbedModel, Input = [embedQuery] },
+                new EmbedRequest { Model = _knowledgeBase.EmbeddingModel, Input = [embedQuery] },
                 ct);
 
             var vector = embed.Embeddings[0];
             // Request payload explicitly — default selector can omit payload fields, which makes chunks look empty to the model.
             var hits = await _qdrant.SearchAsync(
-                CollectionName,
+                _knowledgeBase.CollectionName,
                 vector,
                 limit: (ulong)topK,
                 payloadSelector: true,
