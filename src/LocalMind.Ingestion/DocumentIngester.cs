@@ -46,7 +46,7 @@ public class DocumentIngester(
 
             await qdrant.UpsertAsync(knowledgeBase.CollectionName, [
                 new PointStruct {
-                    Id = new PointId { Uuid = Guid.NewGuid().ToString() },
+                    Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(filePath, index).ToString() }, // create idempotent point IDs
                     Vectors = vector,
                     Payload = {
                         ["source"] = filePath,
