@@ -24,6 +24,10 @@ public class DocumentIngester(
                 Size = knowledgeBase.EmbeddingDimensions,
                 Distance = Distance.Cosine
             });
+
+            // Index the fields you'll filter on (filename and source)
+            await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "filename", PayloadSchemaType.Keyword);
+            await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "source", PayloadSchemaType.Keyword);
         }
 
         var text = await File.ReadAllTextAsync(filePath);
