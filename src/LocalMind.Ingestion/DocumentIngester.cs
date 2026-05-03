@@ -96,9 +96,20 @@ public class DocumentIngester(
         var step = Math.Max(1, size - overlap);
         for (var i = 0; i < paragraph.Length; i += step)
         {
-            var len = Math.Min(size, paragraph.Length - i);
-            yield return paragraph.Substring(i, len);
-            if (i + len >= paragraph.Length)
+            var end = Math.Min(i + size, paragraph.Length);
+
+            // Snap end to nearest word boundary (look back up to 50 chars)
+            if (end < paragraph.Length)
+            {
+                var boundary = paragraph.LastIndexOf(' ', end, Math.Min(end - i, 50));
+                if (boundary > i) end = boundary;
+            }
+
+            var slice = paragraph[i..end].Trim();
+            if (slice.Length > 0)
+                yield return slice;
+
+            if (end >= paragraph.Length)
                 yield break;
         }
     }
