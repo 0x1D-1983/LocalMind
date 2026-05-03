@@ -16,19 +16,18 @@ public class DocumentIngester(
 {
     public async Task IngestAsync(string filePath)
     {
+        logger.LogInformation("Creating Qdrant collection {CollectionName}", knowledgeBase.CollectionName);
         if (!await qdrant.CollectionExistsAsync(knowledgeBase.CollectionName))
         {
-            logger.LogInformation("Creating Qdrant collection {CollectionName}", knowledgeBase.CollectionName);
-            await qdrant.CreateCollectionAsync(knowledgeBase.CollectionName, new VectorParams
-            {
+            await qdrant.CreateCollectionAsync(knowledgeBase.CollectionName, new VectorParams {
                 Size = knowledgeBase.EmbeddingDimensions,
                 Distance = Distance.Cosine
             });
-
-            // Index the fields you'll filter on (filename and source)
-            await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "filename", PayloadSchemaType.Keyword);
-            await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "source", PayloadSchemaType.Keyword);
         }
+
+        // Always ensure indexes exist — idempotent, safe to call every time
+        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "filename", PayloadSchemaType.Keyword);
+        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "source", PayloadSchemaType.Keyword);
 
         var text = await File.ReadAllTextAsync(filePath);
         var chunks = ChunkByParagraphs(text, chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
