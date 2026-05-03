@@ -44,11 +44,14 @@ internal static class Program
             return 1;
         }
 
-        using var loggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(dispose: false));
-
         try
         {
             var services = new ServiceCollection();
+            services.AddLogging(logging =>
+            {
+                logging.ClearProviders();
+                logging.AddSerilog(dispose: false);
+            });
             services.AddOllama(configuration);
             services.AddQdrant(configuration);
             services.AddDocumentIngester(configuration);
