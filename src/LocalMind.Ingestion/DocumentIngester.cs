@@ -14,10 +14,10 @@ public class DocumentIngester(
     DocumentIngestOptions chunkOpts,
     ILogger<DocumentIngester> logger)
 {
-    public async Task IngestAsync(string filePath)
+    public async Task IngestAsync(string filePath, CancellationToken ct = default)
     {
         logger.LogInformation("Creating Qdrant collection {CollectionName}", knowledgeBase.CollectionName);
-        if (!await qdrant.CollectionExistsAsync(knowledgeBase.CollectionName))
+        if (!await qdrant.CollectionExistsAsync(knowledgeBase.CollectionName, cancellationToken: ct))
         {
             await qdrant.CreateCollectionAsync(knowledgeBase.CollectionName, new VectorParams {
                 Size = knowledgeBase.EmbeddingDimensions,
@@ -26,8 +26,8 @@ public class DocumentIngester(
         }
 
         // Always ensure indexes exist — idempotent, safe to call every time
-        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "filename", PayloadSchemaType.Keyword);
-        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "source", PayloadSchemaType.Keyword);
+        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "filename", PayloadSchemaType.Keyword, cancellationToken: ct);
+        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "source", PayloadSchemaType.Keyword, cancellationToken: ct);
 
         var text = await File.ReadAllTextAsync(filePath);
         var chunks = ChunkByParagraphs(text, chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
@@ -38,7 +38,7 @@ public class DocumentIngester(
         var embedResponse = await ollama.EmbedAsync(new EmbedRequest {
             Model = knowledgeBase.EmbeddingModel,
             Input = inputs  // all chunks at once
-        });
+        }, cancellationToken: ct);
 
         var points = chunks.Select((chunk, index) => new PointStruct {
             Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(filePath, index).ToString() },
@@ -48,14 +48,14 @@ public class DocumentIngester(
                 ["filename"] = docLabel,
                 ["chunk_index"] = index,
                 ["chunk_total"] = chunks.Count,
-                ["text"] = chunk
+                ["text"] = chunk,
             }
         }).ToList();
 
         // Single round-trip to Qdrant
         const int batchSize = 32;
         foreach (var batch in points.Chunk(batchSize))
-            await qdrant.UpsertAsync(knowledgeBase.CollectionName, batch);
+            await qdrant.UpsertAsync(knowledgeBase.CollectionName, batch, cancellationToken: ct);
     }
 
     /// <summary>
