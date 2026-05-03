@@ -35,14 +35,21 @@ public class DocumentIngester(
 
         // 1 call to Ollama for all chunks
         var inputs = chunks.Select(c => $"search_document: {c}").ToList();
-        var embedResponse = await ollama.EmbedAsync(new EmbedRequest {
-            Model = knowledgeBase.EmbeddingModel,
-            Input = inputs  // all chunks at once
-        }, cancellationToken: ct);
+        var allEmbeddings = new List<float[]>();
+
+        foreach (var inputBatch in inputs.Chunk(chunkOpts.EmbeddingBatchSize))
+        {
+            var response = await ollama.EmbedAsync(new EmbedRequest {
+                Model = knowledgeBase.EmbeddingModel,
+                Input = inputBatch.ToList()
+            }, cancellationToken: ct);
+
+            allEmbeddings.AddRange(response.Embeddings);
+        }
 
         var points = chunks.Select((chunk, index) => new PointStruct {
             Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(filePath, index).ToString() },
-            Vectors = embedResponse.Embeddings[index],  // aligned by index
+            Vectors = allEmbeddings[index],  // aligned by index
             Payload = {
                 ["source"] = filePath,
                 ["filename"] = docLabel,
@@ -55,8 +62,7 @@ public class DocumentIngester(
         // Single round-trip to Qdrant
         logger.LogInformation("Ingesting {File}: {ChunkCount} chunks into {Collection}", docLabel, chunks.Count, knowledgeBase.CollectionName);
         
-        const int batchSize = 32;
-        foreach (var batch in points.Chunk(batchSize))
+        foreach (var batch in points.Chunk(chunkOpts.UpsertBatchSize))
             await qdrant.UpsertAsync(knowledgeBase.CollectionName, batch, cancellationToken: ct);
 
         logger.LogInformation("Ingested {File}: {ChunkCount} chunks into {Collection}", docLabel, chunks.Count, knowledgeBase.CollectionName);

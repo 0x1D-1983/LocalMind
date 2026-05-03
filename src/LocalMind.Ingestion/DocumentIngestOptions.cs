@@ -14,4 +14,12 @@ public sealed class DocumentIngestOptions
     /// <summary>Larger overlap keeps facts (e.g. names in one sentence) duplicated across adjacent vectors for better recall.</summary>
     [Range(1, 8192)]
     public int Overlap { get; set; } = 160;
+
+    /// <summary>Batch size for embedding requests to Ollama.</summary>
+    [Range(1, 128)]
+    public int EmbeddingBatchSize { get; set; } = 16;
+
+    /// <summary>Batch size for upsert requests to Qdrant.</summary>
+    [Range(1, 128)]
+    public int UpsertBatchSize { get; set; } = 32;
 }
