@@ -48,7 +48,7 @@ public class DocumentIngester(
         }
 
         var points = chunks.Select((chunk, index) => new PointStruct {
-            Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(filePath, index).ToString() },
+            Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(docLabel, index).ToString() },
             Vectors = allEmbeddings[index],  // aligned by index
             Payload = {
                 ["source"] = filePath,
