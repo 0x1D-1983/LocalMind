@@ -81,11 +81,9 @@ public sealed class KnowledgeSearchTool : ITool
 
         try
         {
-            // Use Nomic's designed asymmetry
-            var embedQuery = $"search_query: {queryText}";
-
+            // Nomic's designed asymmetry
             var embed = await _ollama.EmbedAsync(
-                new EmbedRequest { Model = _knowledgeBase.EmbeddingModel, Input = [embedQuery] },
+                new EmbedRequest { Model = _knowledgeBase.EmbeddingModel, Input = [$"search_query: {queryText}"] }, // Nomic's designed asymmetry
                 ct);
 
             var vector = embed.Embeddings[0];

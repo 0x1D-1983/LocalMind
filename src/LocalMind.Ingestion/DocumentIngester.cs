@@ -30,32 +30,32 @@ public class DocumentIngester(
         var chunks = ChunkByParagraphs(text, chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
         var docLabel = Path.GetFileName(filePath);
 
+        var points = new List<PointStruct>();
+
         foreach (var (chunk, index) in chunks.Select((c, i) => (c, i)))
         {
-            // Use Nomic's designed asymmetry
-            var embedText = $"search_document: {chunk}";
+            var embedding = await ollama.EmbedAsync(new EmbedRequest {
+                Model = knowledgeBase.EmbeddingModel,
+                Input = [$"search_document: {chunk}"] // Nomic's designed asymmetry
+            });
 
-            var embedding = await ollama.EmbedAsync(
-                new EmbedRequest {
-                    Model = knowledgeBase.EmbeddingModel,
-                    Input = [embedText]
-                });
-
-            var vector = embedding.Embeddings[0];
-
-            await qdrant.UpsertAsync(knowledgeBase.CollectionName, [
-                new PointStruct {
-                    Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(filePath, index).ToString() }, // create idempotent point IDs
-                    Vectors = vector,
-                    Payload = {
-                        ["source"] = filePath,
-                        ["filename"] = docLabel,
-                        ["chunk_index"] = index,
-                        ["text"] = chunk
-                    }
+            points.Add(new PointStruct {
+                Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(filePath, index).ToString() }, // create idempotent Point IDs
+                Vectors = embedding.Embeddings[0],
+                Payload = {
+                    ["source"] = filePath,
+                    ["filename"] = docLabel,
+                    ["chunk_index"] = index,
+                    ["chunk_total"] = chunks.Count,   // useful for context reconstruction
+                    ["text"] = chunk
                 }
-            ]);
+            });
         }
+
+        // Single round-trip to Qdrant
+        const int batchSize = 32;
+        foreach (var batch in points.Chunk(batchSize))
+            await qdrant.UpsertAsync(knowledgeBase.CollectionName, batch);
     }
 
     /// <summary>
