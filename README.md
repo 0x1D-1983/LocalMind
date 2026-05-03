@@ -41,7 +41,7 @@ dotnet build LocalMind.sln
 dotnet run --project src/LocalMind.IngestConsoleApp/LocalMind.IngestConsoleApp.csproj -- -d /path/to/your.md
 ```
 
-Configuration is loaded from `src/LocalMind.IngestConsoleApp/appsettings.json` (`KnowledgeBase`, `DocumentIngest`, `Ollama`, `Qdrant`).
+Configuration is loaded from `src/LocalMind.IngestConsoleApp/appsettings.json` (`Serilog`, `KnowledgeBase`, `DocumentIngest`, `Ollama`, `Qdrant`).
 
 **4. Run the knowledge chat console**
 
@@ -58,7 +58,7 @@ Type questions at the prompt; use `exit` or `quit` to leave. Ensure the chat mod
 | **LocalMind.KnowledgeChatBot** | Console host: Serilog, agent, knowledge search tool, Ollama + Qdrant |
 | **LocalMind.IngestConsoleApp** | CLI to ingest a single file into Qdrant (chunk + embed + upsert) |
 | **LocalMind.Agent** | ReAct loop, structured JSON output parsing, traces, conversation store, semantic cache stub |
-| **LocalMind.Tools** | Tool registry, executor, manifests (`search_knowledge_base`, calculator, database stub, …) |
+| **LocalMind.Tools** | Tool registry, executor, manifests (`search_knowledge_base`, `calculate`, `query_database` stub, …) |
 | **LocalMind.Ingestion** | Document chunking, embedding via Ollama, Qdrant upsert; `KnowledgeBaseOptions` + `DocumentIngestOptions` |
 | **LocalMind.Ollama** | `OllamaApiClient` + `OllamaApiClientOptions` DI |
 | **LocalMind.Qdrant** | `QdrantClient` + `QdrantClientOptions` DI |
@@ -92,7 +92,7 @@ Each executable has its own `appsettings.json`. Common sections:
 }
 ```
 
-Register in DI with `services.AddAgent(configuration)` (see `AgentServiceExtensions`).
+Register in DI with `services.AddAgent(configuration)` (see `AgentServiceExtensions` in `src/LocalMind.Agent/Agentinfrastructure.cs`). Keys omitted from JSON use defaults from `AgentOptions` (for example `MaxConversationTurns` defaults to `20`).
 
 **Knowledge base / vector index** (`KnowledgeBaseOptions` — used by ingest and `search_knowledge_base`):
 
@@ -106,13 +106,15 @@ Register in DI with `services.AddAgent(configuration)` (see `AgentServiceExtensi
 }
 ```
 
-**Document ingest (chunking only)** (`DocumentIngestOptions` — ingest console only):
+**Document ingest** (`DocumentIngestOptions` — ingest console only; chunking plus batch sizes for embed/upsert):
 
 ```json
 {
   "DocumentIngest": {
-    "ChunkSize": 480,
-    "Overlap": 160
+    "ChunkSize": 2000,
+    "Overlap": 300,
+    "EmbeddingBatchSize": 16,
+    "UpsertBatchSize": 32
   }
 }
 ```
