@@ -16,20 +16,20 @@ public class DocumentIngester(
 {
     public async Task IngestAsync(string filePath, CancellationToken ct = default)
     {
-        logger.LogInformation("Creating Qdrant collection {CollectionName}", knowledgeBase.CollectionName);
         if (!await qdrant.CollectionExistsAsync(knowledgeBase.CollectionName, cancellationToken: ct))
         {
+            logger.LogInformation("Creating Qdrant collection {CollectionName}", knowledgeBase.CollectionName);
             await qdrant.CreateCollectionAsync(knowledgeBase.CollectionName, new VectorParams {
                 Size = knowledgeBase.EmbeddingDimensions,
                 Distance = Distance.Cosine
-            });
+            }, cancellationToken: ct);
         }
 
         // Always ensure indexes exist — idempotent, safe to call every time
         await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "filename", PayloadSchemaType.Keyword, cancellationToken: ct);
         await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "source", PayloadSchemaType.Keyword, cancellationToken: ct);
 
-        var text = await File.ReadAllTextAsync(filePath);
+        var text = await File.ReadAllTextAsync(filePath, cancellationToken: ct);
         var chunks = ChunkByParagraphs(text, chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
         var docLabel = Path.GetFileName(filePath);
 
@@ -53,9 +53,13 @@ public class DocumentIngester(
         }).ToList();
 
         // Single round-trip to Qdrant
+        logger.LogInformation("Ingesting {File}: {ChunkCount} chunks into {Collection}", docLabel, chunks.Count, knowledgeBase.CollectionName);
+        
         const int batchSize = 32;
         foreach (var batch in points.Chunk(batchSize))
             await qdrant.UpsertAsync(knowledgeBase.CollectionName, batch, cancellationToken: ct);
+
+        logger.LogInformation("Ingested {File}: {ChunkCount} chunks into {Collection}", docLabel, chunks.Count, knowledgeBase.CollectionName);
     }
 
     /// <summary>
