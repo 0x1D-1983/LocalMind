@@ -32,9 +32,8 @@ public class DocumentIngester(
 
         foreach (var (chunk, index) in chunks.Select((c, i) => (c, i)))
         {
-            // Prefix the document name only for the embedding so vectors align with file/topic-specific questions;
-            // payload keeps the raw chunk text for the model to read.
-            var embedText = $"{docLabel}\n{chunk}";
+            // Use Nomic's designed asymmetry
+            var embedText = $"search_document: {chunk}";
 
             var embedding = await ollama.EmbedAsync(
                 new EmbedRequest {

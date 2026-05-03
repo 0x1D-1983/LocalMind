@@ -81,11 +81,8 @@ public sealed class KnowledgeSearchTool : ITool
 
         try
         {
-            // For relationship / biography-style questions, enrich the embedding only (not the logged query) so vectors
-            // sit closer to prose like "daughter of John and Elaine" when the user says "parents" or "who were".
-            var embedQuery = ShouldExpandEmbeddingQuery(queryText)
-                ? $"{queryText}\nbiography family parents relatives early life background"
-                : queryText;
+            // Use Nomic's designed asymmetry
+            var embedQuery = $"search_query: {queryText}";
 
             var embed = await _ollama.EmbedAsync(
                 new EmbedRequest { Model = _knowledgeBase.EmbeddingModel, Input = [embedQuery] },
