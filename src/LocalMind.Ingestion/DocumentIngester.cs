@@ -34,27 +34,24 @@ public class DocumentIngester(
         var chunks = ChunkByParagraphs(text, chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
         var docLabel = Path.GetFileName(filePath);
 
-        var points = new List<PointStruct>();
+        // 1 call to Ollama for all chunks
+        var inputs = chunks.Select(c => $"search_document: {c}").ToList();
+        var embedResponse = await ollama.EmbedAsync(new EmbedRequest {
+            Model = knowledgeBase.EmbeddingModel,
+            Input = inputs  // all chunks at once
+        });
 
-        foreach (var (chunk, index) in chunks.Select((c, i) => (c, i)))
-        {
-            var embedding = await ollama.EmbedAsync(new EmbedRequest {
-                Model = knowledgeBase.EmbeddingModel,
-                Input = [$"search_document: {chunk}"] // Nomic's designed asymmetry
-            });
-
-            points.Add(new PointStruct {
-                Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(filePath, index).ToString() }, // create idempotent Point IDs
-                Vectors = embedding.Embeddings[0],
-                Payload = {
-                    ["source"] = filePath,
-                    ["filename"] = docLabel,
-                    ["chunk_index"] = index,
-                    ["chunk_total"] = chunks.Count,   // useful for context reconstruction
-                    ["text"] = chunk
-                }
-            });
-        }
+        var points = chunks.Select((chunk, index) => new PointStruct {
+            Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(filePath, index).ToString() },
+            Vectors = embedResponse.Embeddings[index],  // aligned by index
+            Payload = {
+                ["source"] = filePath,
+                ["filename"] = docLabel,
+                ["chunk_index"] = index,
+                ["chunk_total"] = chunks.Count,
+                ["text"] = chunk
+            }
+        }).ToList();
 
         // Single round-trip to Qdrant
         const int batchSize = 32;
