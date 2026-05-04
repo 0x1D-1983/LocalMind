@@ -42,17 +42,19 @@ internal static class Program
 
             using var app = builder.Build();
 
-            var agent = app.Services.GetRequiredService<AgentApp>();
-            var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Chat");
-
-            logger.LogInformation("Knowledge chat — type your question, or 'exit' to quit.");
-
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) =>
             {
                 e.Cancel = true;
                 cts.Cancel();
             };
+
+            await app.StartAsync(cts.Token);
+
+            var agent = app.Services.GetRequiredService<AgentApp>();
+            var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Chat");
+
+            logger.LogInformation("Knowledge chat — type your question, or 'exit' to quit.");
 
             try
             {
