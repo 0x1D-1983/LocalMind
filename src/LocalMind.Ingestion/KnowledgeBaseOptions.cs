@@ -14,10 +14,6 @@ public sealed class KnowledgeBaseOptions
     [Required]
     public string CollectionName { get; set; } = "knowledge";
 
-    /// <summary>Qdrant collection name for semantic cache.</summary>
-    [Required]
-    public string SemanticCacheCollectionName { get; set; } = "semantic_cache";
-
     /// <summary>Ollama embedding model used to build and query vectors in this collection.</summary>
     [Required]
     public string EmbeddingModel { get; set; } = "nomic-embed-text";
