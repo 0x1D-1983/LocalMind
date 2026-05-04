@@ -18,6 +18,11 @@ public static class AgentExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddOptions<QueryRewriterOptions>()
+            .Bind(configuration.GetSection(QueryRewriterOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         services.AddSingleton<IConversationStore, InMemoryConversationStore>();
         services.AddSingleton<IStructuredOutputParser, StructuredOutputParser>();
 
@@ -27,6 +32,13 @@ public static class AgentExtensions
             var qdrant = sp.GetRequiredService<QdrantClient>();
             var options = sp.GetRequiredService<IOptions<SemanticCacheOptions>>().Value;
             return new SemanticCache<AgentResponse>(ollama, qdrant, options);
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var ollama = sp.GetRequiredService<OllamaApiClient>();
+            var options = sp.GetRequiredService<IOptions<QueryRewriterOptions>>().Value;
+            return new QueryRewriter(ollama, options);
         });
 
         services.AddHostedService(sp =>
@@ -47,8 +59,10 @@ public static class AgentExtensions
             var semanticCache = sp.GetRequiredService<SemanticCache<AgentResponse>>();
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agent>();
             var structuredOutputParser = sp.GetRequiredService<IStructuredOutputParser>();
+            var queryRewriter = sp.GetRequiredService<QueryRewriter>();
             
-            return new Agent(ollama, executor, manifest, conversationStore, semanticCache, agentOptions, semanticCacheOptions, logger, structuredOutputParser);
+            return new Agent(ollama, executor, manifest, conversationStore, semanticCache, 
+                agentOptions, semanticCacheOptions, logger, structuredOutputParser, queryRewriter);
         });
 
         return services;

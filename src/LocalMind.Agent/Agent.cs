@@ -30,7 +30,8 @@ public sealed class Agent(
         AgentOptions agentOptions,
         SemanticCacheOptions semanticCacheOptions,
         ILogger<Agent> logger,
-        IStructuredOutputParser structuredOutputParser)
+        IStructuredOutputParser structuredOutputParser,
+        QueryRewriter queryRewriter)
 {
     public async Task<AgentResponse> RunAsync(
         string sessionId,
@@ -38,15 +39,23 @@ public sealed class Agent(
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
+        string resolvedQuery = userQuery;
 
         logger.LogInformation("Agent query started: SessionId: {SessionId}, Query: {Query}", sessionId, userQuery);
+
+        // Load persisted turns, slot them between system prompt and current user message
+        var persistedTurns = await conversationStore.GetAsync(sessionId, ct);
 
         // ── Phase 1: Semantic cache ───────────────────────────────────────────
         // Check before touching the model — a cache hit costs only one embedding
         // call (~5ms) vs a full agent run (~500ms–5s depending on iterations).
         if (semanticCacheOptions.Enabled)
         {
-            var cacheResult = await semanticCache.GetAsync(userQuery, ct);
+            // Rewrite first — resolve pronouns against conversation history
+            resolvedQuery = await queryRewriter.RewriteAsync(userQuery, persistedTurns, ct);
+            
+            // Cache lookup uses the resolved, self-contained query
+            var cacheResult = await semanticCache.GetAsync(resolvedQuery, ct);
             if (cacheResult.IsHit)
             {
                 sw.Stop();
@@ -63,9 +72,6 @@ public sealed class Agent(
         // Tool definitions go in the ChatRequest.Tools field, not inline in the
         // system prompt, so Ollama handles their serialisation format correctly.
         
-        // Load persisted turns, slot them between system prompt and current user message
-        var persistedTurns = await conversationStore.GetAsync(sessionId, ct);
-
         var userMessage = new Message(ChatRole.User, userQuery);
 
         var history = new List<Message>(persistedTurns.Count + 2)
@@ -130,7 +136,7 @@ public sealed class Agent(
 
                 // Store in semantic cache for future queries
                 if (semanticCacheOptions.Enabled)
-                    await semanticCache.SetAsync(userQuery, response, ct);
+                    await semanticCache.SetAsync(resolvedQuery, response, ct);
 
                 // Persist only the clean user/assistant pair
                 await conversationStore.AppendTurnAsync(
