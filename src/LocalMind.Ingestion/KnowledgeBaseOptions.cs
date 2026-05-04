@@ -24,5 +24,5 @@ public sealed class KnowledgeBaseOptions
 
     /// <summary>Vector size for the embedding model (e.g. 768 for <c>nomic-embed-text</c>).</summary>
     [Range(1, 8192)]
-    public uint EmbeddingDimensions { get; set; } = 768;
+    public uint VectorSize { get; set; } = 768;
 }

@@ -11,6 +11,19 @@ public class SemanticCache<T>(
     QdrantClient qdrant,
     SemanticCacheOptions options)
 {
+    public async Task EnsureCreatedAsync(CancellationToken ct = default)
+    {
+        var collections = await qdrant.ListCollectionsAsync(ct);
+
+        if (collections.Any(c => c == options.CollectionName))
+            return;
+
+        await qdrant.CreateCollectionAsync(options.CollectionName, new VectorParams {
+                Size = options.VectorSize,
+                Distance = Distance.Cosine
+            }, cancellationToken: ct);
+    }
+
     public async Task<CacheResult<T>> GetAsync(string query, CancellationToken ct = default)
     {
         var embedding = await ollama.EmbedAsync(new EmbedRequest {

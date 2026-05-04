@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
+using Qdrant.Client;
 
 namespace LocalMind.Agent;
 
@@ -17,15 +18,33 @@ public static class AgentExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddSingleton<IConversationStore, InMemoryConversationStore>();
+        services.AddSingleton<IStructuredOutputParser, StructuredOutputParser>();
+
+        services.AddSingleton(sp =>
+        {
+            var ollama = sp.GetRequiredService<OllamaApiClient>();
+            var qdrant = sp.GetRequiredService<QdrantClient>();
+            var options = sp.GetRequiredService<IOptions<SemanticCacheOptions>>().Value;
+            return new SemanticCache<AgentResponse>(ollama, qdrant, options);
+        });
+
+        services.AddHostedService(sp =>
+        {
+            var cache = sp.GetRequiredService<SemanticCache<AgentResponse>>();
+            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<SemanticCacheInitializer<AgentResponse>>();
+            return new SemanticCacheInitializer<AgentResponse>(cache, logger);
+        });
+
         services.AddSingleton(sp =>
         {
             var ollama = sp.GetRequiredService<OllamaApiClient>();
             var executor = sp.GetRequiredService<ToolExecutor>();
             var manifest = sp.GetRequiredService<ToolManifestBuilder>();
             var conversationStore = sp.GetRequiredService<IConversationStore>();
-            var semanticCache = sp.GetRequiredService<SemanticCache<AgentResponse>>();
             var agentOptions = sp.GetRequiredService<IOptions<AgentOptions>>().Value;
             var semanticCacheOptions = sp.GetRequiredService<IOptions<SemanticCacheOptions>>().Value;
+            var semanticCache = sp.GetRequiredService<SemanticCache<AgentResponse>>();
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agent>();
             var structuredOutputParser = sp.GetRequiredService<IStructuredOutputParser>();
             

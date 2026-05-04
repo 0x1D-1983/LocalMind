@@ -20,7 +20,7 @@ public class DocumentIngester(
         {
             logger.LogInformation("Creating Qdrant collection {CollectionName}", knowledgeBase.CollectionName);
             await qdrant.CreateCollectionAsync(knowledgeBase.CollectionName, new VectorParams {
-                Size = knowledgeBase.EmbeddingDimensions,
+                Size = knowledgeBase.VectorSize,
                 Distance = Distance.Cosine
             }, cancellationToken: ct);
         }
