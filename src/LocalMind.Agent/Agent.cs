@@ -1,8 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Text.Json;
+using LocalMind.Cache;
 using LocalMind.Tools;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OllamaSharp.Models.Chat;
 
@@ -21,41 +21,17 @@ namespace LocalMind.Agent;
 ///                                  → NO  → [parse JSON] → [cache] → return
 ///   }
 /// </summary>
-public sealed class Agent
-{
-    private readonly OllamaApiClient _ollama;
-    private readonly ToolExecutor _executor;
-    private readonly ToolManifestBuilder _manifest;
-    private readonly SemanticCache _cache;
-    private readonly AgentOptions _options;
-    private readonly ILogger<Agent> _logger;
-    private readonly IStructuredOutputParser _structuredOutputParser;
-    private readonly IConversationStore _conversationStore;
-
-    public Agent(
+public sealed class Agent(
         OllamaApiClient ollama,
         ToolExecutor executor,
         ToolManifestBuilder manifest,
         IConversationStore conversationStore,
-        SemanticCache cache,
-        IOptions<AgentOptions> options,
+        SemanticCache<AgentResponse> semanticCache,
+        AgentOptions agentOptions,
+        SemanticCacheOptions semanticCacheOptions,
         ILogger<Agent> logger,
         IStructuredOutputParser structuredOutputParser)
-    {
-        _ollama = ollama;
-        _executor = executor;
-        _manifest = manifest;
-        _cache    = cache;
-        _options  = options.Value;
-        _logger   = logger;
-        _structuredOutputParser = structuredOutputParser;
-        _conversationStore = conversationStore;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public API
-    // ─────────────────────────────────────────────────────────────────────────
-
+{
     public async Task<AgentResponse> RunAsync(
         string sessionId,
         string userQuery,
@@ -63,20 +39,19 @@ public sealed class Agent
     {
         var sw = Stopwatch.StartNew();
 
-        _logger.LogInformation("Agent query started: SessionId: {SessionId}, Query: {Query}", sessionId, userQuery);
+        logger.LogInformation("Agent query started: SessionId: {SessionId}, Query: {Query}", sessionId, userQuery);
 
         // ── Phase 1: Semantic cache ───────────────────────────────────────────
         // Check before touching the model — a cache hit costs only one embedding
         // call (~5ms) vs a full agent run (~500ms–5s depending on iterations).
-        if (_options.EnableSemanticCache)
+        if (semanticCacheOptions.Enabled)
         {
-            var cached = await _cache.GetAsync(userQuery, ct);
-            if (cached is not null)
+            var cacheResult = await semanticCache.GetAsync(userQuery, ct);
+            if (cacheResult.IsHit)
             {
                 sw.Stop();
-                _logger.LogInformation(
-                    "Cache HIT for query in {ElapsedMs}ms", sw.ElapsedMilliseconds);
-                return cached with { FromCache = true };
+                logger.LogInformation("Semantic cache HIT for query in {ElapsedMs}ms, cached at {CachedAt}", sw.ElapsedMilliseconds, cacheResult.CachedAt);
+                return cacheResult.Value;
             }
         }
 
@@ -89,7 +64,7 @@ public sealed class Agent
         // system prompt, so Ollama handles their serialisation format correctly.
         
         // Load persisted turns, slot them between system prompt and current user message
-        var persistedTurns = await _conversationStore.GetAsync(sessionId, ct);
+        var persistedTurns = await conversationStore.GetAsync(sessionId, ct);
 
         var userMessage = new Message(ChatRole.User, userQuery);
 
@@ -106,9 +81,9 @@ public sealed class Agent
         var kbSourceFilesSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // ── Phase 3: ReAct loop ───────────────────────────────────────────────
-        for (int iteration = 0; iteration < _options.MaxIterations; iteration++)
+        for (int iteration = 0; iteration < agentOptions.MaxIterations; iteration++)
         {
-            _logger.LogDebug("ReAct iteration {Iteration}", iteration);
+            logger.LogDebug("ReAct iteration {Iteration}", iteration);
 
             var llmResponse = await CallModelAsync(history, ct);
             var llmDoneResponse = (ChatDoneResponseStream)llmResponse;
@@ -139,14 +114,14 @@ public sealed class Agent
                 sw.Stop();
 
                 var traceSnapshot = trace.Build(sw.Elapsed);
-                var response = await _structuredOutputParser.ParseFinalResponseAsync(
+                var response = await structuredOutputParser.ParseFinalResponseAsync(
                     raw:    llmResponse.Message.Content ?? string.Empty,
                     trace:  traceSnapshot,
                     ct:     ct);
 
                 response = GroundKnowledgeSources(response, kbSourceFilesOrdered, traceSnapshot);
 
-                _logger.LogInformation(
+                logger.LogInformation(
                     "Agent completed in {Iterations} iteration(s), {TotalMs}ms, " +
                     "{PromptTokens} prompt tokens, {CompletionTokens} completion tokens",
                     iteration + 1, sw.ElapsedMilliseconds,
@@ -154,11 +129,11 @@ public sealed class Agent
                     response.Trace!.TotalCompletionTokens);
 
                 // Store in semantic cache for future queries
-                if (_options.EnableSemanticCache)
-                    await _cache.SetAsync(userQuery, response, ct);
+                if (semanticCacheOptions.Enabled)
+                    await semanticCache.SetAsync(userQuery, response, ct);
 
                 // Persist only the clean user/assistant pair
-                await _conversationStore.AppendTurnAsync(
+                await conversationStore.AppendTurnAsync(
                     sessionId,
                     userMessage,
                     new Message(ChatRole.Assistant, llmResponse.Message.Content ?? string.Empty),
@@ -168,13 +143,13 @@ public sealed class Agent
             }
 
             // ── Tool calls → execute and feed results back ────────────────────
-            _logger.LogDebug(
+            logger.LogDebug(
                 "Iteration {Iteration}: model requested {Count} tool call(s): {Names}",
                 iteration, toolCalls.Count, string.Join(", ", toolCallNames));
 
             // Parallel execution — ToolExecutor.ExecuteAllAsync uses Task.WhenAll.
             // Wall-clock time ≈ slowest single tool, not sum of all tools.
-            var toolResults = await _executor.ExecuteAllAsync([llmResponse.Message], ct);
+            var toolResults = await executor.ExecuteAllAsync([llmResponse.Message], ct);
 
             // Append each result as a ChatRole.Tool message.
             // The Name field tells the model which tool produced this result,
@@ -194,13 +169,13 @@ public sealed class Agent
 
         // ── Iteration limit exceeded ──────────────────────────────────────────
         sw.Stop();
-        _logger.LogWarning(
+        logger.LogWarning(
             "Agent exceeded max iterations ({Max}) after {ElapsedMs}ms. " +
             "Last history length: {HistoryLength} messages",
-            _options.MaxIterations, sw.ElapsedMilliseconds, history.Count);
+            agentOptions.MaxIterations, sw.ElapsedMilliseconds, history.Count);
 
         throw new AgentException(
-            $"Agent could not produce a final answer within {_options.MaxIterations} iterations. " +
+            $"Agent could not produce a final answer within {agentOptions.MaxIterations} iterations. " +
             $"Last tool calls: {string.Join(", ", history.LastOrDefault(m => m.Role == ChatRole.Assistant)?.ToolCalls?.Select(t => t.Function?.Name) ?? [])}. " +
             $"Consider increasing MaxIterations or simplifying the query.");
     }
@@ -225,9 +200,9 @@ public sealed class Agent
     {
         var request = new ChatRequest
         {
-            Model    = _options.ModelName,
+            Model    = agentOptions.ModelName,
             Messages = history,
-            Tools    = _manifest.Build(),
+            Tools    = manifest.Build(),
             Stream   = false,
             // Qwen3 has a "thinking" mode that emits <think>...</think> tokens.
             // These count toward your token budget but are useful for complex
@@ -238,13 +213,13 @@ public sealed class Agent
         // LastOrDefaultAsync because with Stream=false, Ollama returns a single
         // chunk containing the complete response. If Stream were true, we'd need
         // to aggregate content across chunks (not done here).
-        var response = await _ollama.ChatAsync(request, ct)
+        var response = await ollama.ChatAsync(request, ct)
             .LastOrDefaultAsync(ct);
 
         if (response is null)
             throw new AgentException(
-                $"Ollama returned no response for model '{_options.ModelName}'. " +
-                "Is the model pulled? Run: ollama pull " + _options.ModelName);
+                $"Ollama returned no response for model '{agentOptions.ModelName}'. " +
+                "Is the model pulled? Run: ollama pull " + agentOptions.ModelName);
 
         return response;
     }

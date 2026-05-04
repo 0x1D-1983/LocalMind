@@ -1,4 +1,5 @@
 ﻿using LocalMind.Agent;
+using LocalMind.Cache;
 using LocalMind.Ingestion;
 using LocalMind.Ollama;
 using LocalMind.Qdrant;
@@ -34,11 +35,10 @@ internal static class Program
                 .AddOllama(builder.Configuration)
                 .AddQdrant(builder.Configuration)
                 .AddKnowledgeBaseOptions(builder.Configuration)
+                .AddSemanticCacheOptions(builder.Configuration)
                 .AddToolInfrastructure(builder.Configuration)
-                .AddTool<KnowledgeSearchTool>();
-
-            builder.Services.AddSingleton<SemanticCache>();
-            builder.Services.AddAgent(builder.Configuration);
+                .AddTool<KnowledgeSearchTool>()
+                .AddAgent(builder.Configuration);
 
             using var app = builder.Build();
 

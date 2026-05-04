@@ -24,9 +24,6 @@ public sealed record AgentResponse
     [JsonPropertyName("tools_used")]
     public string[] ToolsUsed { get; init; } = [];
 
-    /// <summary>True when the response was served from the semantic cache.</summary>
-    public bool FromCache { get; init; }
-
     /// <summary>
     /// Populated on every live run, null on cache hits.
     /// Strip this before logging responses to LLM context — it's for your eyes only.

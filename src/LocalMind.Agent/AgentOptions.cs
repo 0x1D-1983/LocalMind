@@ -2,19 +2,6 @@ using System.ComponentModel.DataAnnotations;
 
 namespace LocalMind.Agent;
 
-/// <summary>
-/// Configuration for the Agent. Bind from appsettings.json:
-///
-///   "Agent": {
-///     "ModelName": "qwen3",
-///     "MaxIterations": 8,
-///     "MaxOutputRetries": 3,
-///     "SemanticCacheThreshold": 0.92,
-///     "EnableSemanticCache": true
-///   }
-///
-///   services.Configure&lt;AgentOptions&gt;(config.GetSection("Agent"));
-/// </summary>
 public sealed class AgentOptions
 {
     public const string SectionName = "Agent";
@@ -38,17 +25,6 @@ public sealed class AgentOptions
     /// back into the prompt so the model can self-correct.
     /// </summary>
     public int MaxOutputRetries { get; set; } = 3;
-
-    /// <summary>
-    /// Cosine similarity threshold for semantic cache hits.
-    /// 0.92 is a reasonable default — lower values risk false hits (different
-    /// questions getting the same cached answer), higher values miss obvious paraphrases.
-    /// Tune this in Phase 4 experiments.
-    /// </summary>
-    public float SemanticCacheThreshold { get; set; } = 0.92f;
-
-    /// <summary>Set to false to bypass the semantic cache entirely (useful during development).</summary>
-    public bool EnableSemanticCache { get; set; } = true;
 
     /// <summary>
     /// Number of user/assistant turn pairs to retain per session.
