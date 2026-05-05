@@ -115,6 +115,8 @@ public sealed class Agent(
             // so that when we add tool results, the conversation is coherent.
             history.Add(llmResponse.Message);
 
+            logger.LogInformation("LLM Thinking: {Thinking}", llmResponse.Message.Thinking);
+
             var toolCalls = llmResponse.Message.ToolCalls?.ToList() ?? [];
 
             // ── No tool calls → final answer ─────────────────────────────────
