@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Text.Json;
 using LocalMind.Cache;
+using LocalMind.Telemetry;
 using LocalMind.Tools;
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
@@ -31,7 +32,8 @@ public sealed class Agent(
         SemanticCacheOptions semanticCacheOptions,
         ILogger<Agent> logger,
         IStructuredOutputParser structuredOutputParser,
-        QueryRewriter queryRewriter)
+        QueryRewriter queryRewriter,
+        LlmCallMetrics llmCallMetrics)
 {
     public async Task<AgentResponse> RunAsync(
         string sessionId,
@@ -127,12 +129,32 @@ public sealed class Agent(
 
                 response = GroundKnowledgeSources(response, kbSourceFilesOrdered, traceSnapshot);
 
-                logger.LogInformation(
-                    "Agent completed in {Iterations} iteration(s), {TotalMs}ms, " +
-                    "{PromptTokens} prompt tokens, {CompletionTokens} completion tokens",
-                    iteration + 1, sw.ElapsedMilliseconds,
-                    response.Trace!.TotalPromptTokens,
-                    response.Trace!.TotalCompletionTokens);
+                // logger.LogInformation(
+                //     "Agent completed in {Iterations} iteration(s), {TotalMs}ms, " +
+                //     "{PromptTokens} prompt tokens, {CompletionTokens} completion tokens",
+                //     iteration + 1, sw.ElapsedMilliseconds,
+                //     response.Trace!.TotalPromptTokens,
+                //     response.Trace!.TotalCompletionTokens);
+
+                // Emit structured log events for every LLM interaction
+                logger.LogInformation("LLM call completed {@LlmTrace}", new {
+                    Model = agentOptions.ModelName,
+                    PromptTokens = response.Trace!.TotalPromptTokens,
+                    CompletionTokens = response.Trace!.TotalCompletionTokens,
+                    DurationMs = sw.ElapsedMilliseconds,
+                    ToolCallsRequested = toolCalls.Count,
+                    CacheHit = false,
+                    Iteration = iteration + 1,
+                });
+
+                llmCallMetrics.RecordCompletedCall(
+                    model: agentOptions.ModelName,
+                    promptTokens: response.Trace!.TotalPromptTokens,
+                    completionTokens: response.Trace!.TotalCompletionTokens,
+                    durationMs: sw.ElapsedMilliseconds,
+                    toolCallsRequested: toolCalls.Count,
+                    cacheHit: false,
+                    iteration: iteration + 1);
 
                 // Store in semantic cache for future queries
                 if (semanticCacheOptions.Enabled)

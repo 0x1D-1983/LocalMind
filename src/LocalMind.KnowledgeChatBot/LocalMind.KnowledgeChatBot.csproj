@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LocalMind.Agent\LocalMind.Agent.csproj" />
     <ProjectReference Include="..\LocalMind.Ingestion\LocalMind.Ingestion.csproj" />
+    <ProjectReference Include="..\LocalMind.Telemetry\LocalMind.Telemetry.csproj" />
   </ItemGroup>
 
   <ItemGroup>

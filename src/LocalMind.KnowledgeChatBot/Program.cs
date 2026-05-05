@@ -3,6 +3,7 @@ using LocalMind.Cache;
 using LocalMind.Ingestion;
 using LocalMind.Ollama;
 using LocalMind.Qdrant;
+using LocalMind.Telemetry;
 using LocalMind.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -38,7 +39,8 @@ internal static class Program
                 .AddSemanticCacheOptions(builder.Configuration)
                 .AddToolInfrastructure(builder.Configuration)
                 .AddTool<KnowledgeSearchTool>()
-                .AddAgent(builder.Configuration);
+                .AddAgent(builder.Configuration)
+                .AddPrometheusMetricServer(builder.Configuration);
 
             using var app = builder.Build();
 

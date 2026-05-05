@@ -1,0 +1,31 @@
+# my global config
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  body_size_limit: 15MB
+  sample_limit: 1500
+  target_limit: 30
+  label_limit: 30
+  label_name_length_limit: 200
+  label_value_length_limit: 200
+  query_log_file: query.log
+  scrape_failure_log_file: fail.log
+  # scrape_timeout is set to the global default (10s).
+
+
+remote_write:
+  - url: http://prometheus:9090/api/v1/write
+    name: default
+    write_relabel_configs:
+      - source_labels: [__name__]
+        action: drop
+
+
+# otlp:
+#   promote_resource_attributes: ["k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"]
+
+# remote_read:
+#   - url: http://prometheus:9090/api/v1/read
+#     read_recent: true
+#     name: default
+#     enable_http2: false

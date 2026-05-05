@@ -1,5 +1,4 @@
 using System.Text.Json;
-using LocalMind.Ollama;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;

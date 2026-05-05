@@ -1,4 +1,5 @@
 using LocalMind.Cache;
+using LocalMind.Telemetry;
 using LocalMind.Tools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +26,7 @@ public static class AgentExtensions
 
         services.AddSingleton<IConversationStore, InMemoryConversationStore>();
         services.AddSingleton<IStructuredOutputParser, StructuredOutputParser>();
+        services.AddSingleton<LlmCallMetrics>();
 
         services.AddSingleton(sp =>
         {
@@ -60,9 +62,10 @@ public static class AgentExtensions
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agent>();
             var structuredOutputParser = sp.GetRequiredService<IStructuredOutputParser>();
             var queryRewriter = sp.GetRequiredService<QueryRewriter>();
+            var llmCallMetrics = sp.GetRequiredService<LlmCallMetrics>();
             
             return new Agent(ollama, executor, manifest, conversationStore, semanticCache, 
-                agentOptions, semanticCacheOptions, logger, structuredOutputParser, queryRewriter);
+                agentOptions, semanticCacheOptions, logger, structuredOutputParser, queryRewriter, llmCallMetrics);
         });
 
         return services;
