@@ -55,6 +55,7 @@ public sealed class Agent(
         {
             // Rewrite first — resolve pronouns against conversation history
             resolvedQuery = await queryRewriter.RewriteAsync(userQuery, persistedTurns, ct);
+            logger.LogInformation("Resolved query: {ResolvedQuery}", resolvedQuery);
             
             // Cache lookup uses the resolved, self-contained query
             var cacheResult = await semanticCache.GetAsync(resolvedQuery, ct);
