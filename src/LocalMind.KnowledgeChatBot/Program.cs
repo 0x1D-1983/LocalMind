@@ -40,7 +40,8 @@ internal static class Program
                 .AddToolInfrastructure(builder.Configuration)
                 .AddTool<KnowledgeSearchTool>()
                 .AddAgent(builder.Configuration)
-                .AddPrometheusMetricServer(builder.Configuration);
+                // .AddPrometheusMetricServer(builder.Configuration)
+                ;
 
             using var app = builder.Build();
 

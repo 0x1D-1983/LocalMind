@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using OllamaSharp;
 
 namespace LocalMind.Cache;
 
@@ -11,6 +13,18 @@ public static class SemanticCacheExtensions
             .Bind(configuration.GetSection(SemanticCacheOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+
+        services.AddOptions<EntityExtractorOptions>()
+            .Bind(configuration.GetSection(EntityExtractorOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddSingleton(sp =>
+        {
+            var ollama = sp.GetRequiredService<OllamaApiClient>();
+            var options = sp.GetRequiredService<IOptions<EntityExtractorOptions>>().Value;
+            return new EntityExtractor(ollama, options);
+        });
 
         return services;
     }

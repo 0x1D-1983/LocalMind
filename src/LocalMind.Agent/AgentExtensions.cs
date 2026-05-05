@@ -32,8 +32,9 @@ public static class AgentExtensions
         {
             var ollama = sp.GetRequiredService<OllamaApiClient>();
             var qdrant = sp.GetRequiredService<QdrantClient>();
+            var entityExtractor = sp.GetRequiredService<EntityExtractor>();
             var options = sp.GetRequiredService<IOptions<SemanticCacheOptions>>().Value;
-            return new SemanticCache<AgentResponse>(ollama, qdrant, options);
+            return new SemanticCache<AgentResponse>(ollama, qdrant, entityExtractor, options);
         });
 
         services.AddSingleton(sp =>
