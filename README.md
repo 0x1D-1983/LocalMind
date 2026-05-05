@@ -2,7 +2,7 @@
 
 > **Work in progress**
 
-Local **RAG + ReAct agent** stack: [Ollama](https://ollama.com/) for chat and embeddings, [Qdrant](https://qdrant.tech/) for vector search, optional **SQLite** tooling for structured queries, and a **.NET** agent loop (tool calls, structured JSON answers, tracing). A **semantic cache** stores successful `AgentResponse` payloads in a dedicated Qdrant collection keyed by embedding similarity (optional, on by default). A **query rewriter** expands follow-up questions using recent turns so cache lookup uses a self-contained query.
+Local **RAG + ReAct agent** stack: [Ollama](https://ollama.com/) for chat and embeddings, [Qdrant](https://qdrant.tech/) for vector search, optional **SQLite** tooling for structured queries, and a **.NET** agent loop (tool calls, structured JSON answers, tracing). A **semantic cache** stores successful `AgentResponse` payloads in a dedicated Qdrant collection keyed by embedding similarity (optional, on by default). Before lookup and upsert, an **entity extractor** pulls named entities from the query via a small Ollama generate call; those strings are stored on each point and used as a Qdrant payload filter so similar embeddings from unrelated topics are less likely to match. A **query rewriter** expands follow-up questions using recent turns so cache lookup uses a self-contained query.
 
 ## Prerequisites
 
@@ -58,7 +58,7 @@ The chat app builds a generic `IHost` and calls **`StartAsync`** so hosted servi
 | **LocalMind.KnowledgeChatBot** | Console host: Serilog, `IHost` startup, agent, knowledge search tool, Ollama + Qdrant |
 | **LocalMind.IngestConsoleApp** | CLI to ingest a single file into Qdrant (chunk + embed + upsert) |
 | **LocalMind.Agent** | ReAct loop, structured JSON output parsing, traces, conversation store, query rewriter, semantic cache integration |
-| **LocalMind.Cache** | `SemanticCache<T>`, options, hosted initializer (ensure Qdrant collection) |
+| **LocalMind.Cache** | `SemanticCache<T>`, `EntityExtractor` (named entities → Qdrant payload + search filter), options, `AddSemanticCacheOptions`, hosted initializer (ensure Qdrant collection) |
 | **LocalMind.Tools** | Tool registry, executor, manifests (`search_knowledge_base`, `calculate`, `query_database` stub, …) |
 | **LocalMind.Ingestion** | Document chunking, embedding via Ollama, Qdrant upsert; `KnowledgeBaseOptions` + `DocumentIngestOptions` |
 | **LocalMind.Ollama** | `OllamaApiClient` + `OllamaApiClientOptions` DI |
@@ -126,7 +126,19 @@ Metrics are exposed from the chat process and scraped by Prometheus. Current age
 }
 ```
 
-When enabled, the agent embeds the (rewritten) user query, searches this collection above `SimilarityThreshold`, and on a miss stores the final structured response after a successful run. The collection is created on startup if missing (same vector size and distance as configured here).
+When enabled, the agent embeds the (rewritten) user query, extracts entities (see **Entity extractor** below), and searches this collection above `SimilarityThreshold`. If the query yields at least one entity, the search applies a Qdrant filter requiring every extracted entity to appear in the cached point’s `entities` payload field (AND semantics). On a miss, the final structured response is upserted with the same embedding, query text, and entity list. The collection is created on startup if missing (same vector size and distance as configured here).
+
+**Entity extractor** (`EntityExtractorOptions` — registered by `AddSemanticCacheOptions` in `src/LocalMind.Cache/SemanticCacheExtensions.cs`):
+
+```json
+{
+  "EntityExtractor": {
+    "Model": "qwen3:8b"
+  }
+}
+```
+
+The model must be pulled in Ollama. It runs a non-streaming `Generate` call with a short prompt that asks for a JSON array of strings only. `SemanticCache<T>` receives `EntityExtractor` via DI; `AddAgent` wires the cache with the same extractor instance the options register. If you omit the **`EntityExtractor`** block from JSON, the default model name from `EntityExtractorOptions` applies.
 
 **Query rewriter** (`QueryRewriterOptions` — bound in `AddAgent`):
 
@@ -165,7 +177,7 @@ Used before the cache lookup when there is conversation history: the model rewri
 }
 ```
 
-The chat host binds **`KnowledgeBase`** and **`SemanticCache`** options; the ingest app binds **`KnowledgeBase`** and **`DocumentIngest`**. `EmbeddingModel` and `VectorSize` define the index contract for the knowledge collection (ingest and search must agree). The semantic cache uses the **`SemanticCache`** section’s model and dimensions for its own collection.
+The chat host binds **`KnowledgeBase`**, **`SemanticCache`**, and **`EntityExtractor`** options (via `AddSemanticCacheOptions`); the ingest app binds **`KnowledgeBase`** and **`DocumentIngest`**. `EmbeddingModel` and `VectorSize` define the index contract for the knowledge collection (ingest and search must agree). The semantic cache uses the **`SemanticCache`** section’s model and dimensions for its own collection.
 
 **Ollama** (`OllamaApiClientOptions`) and **Qdrant** (`QdrantClientOptions`): host, port, API key, timeouts — see sample `appsettings.json` files in each project.
 
