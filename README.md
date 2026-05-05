@@ -63,6 +63,7 @@ The chat app builds a generic `IHost` and calls **`StartAsync`** so hosted servi
 | **LocalMind.Ingestion** | Document chunking, embedding via Ollama, Qdrant upsert; `KnowledgeBaseOptions` + `DocumentIngestOptions` |
 | **LocalMind.Ollama** | `OllamaApiClient` + `OllamaApiClientOptions` DI |
 | **LocalMind.Qdrant** | `QdrantClient` + `QdrantClientOptions` DI |
+| **LocalMind.Telemetry** | Prometheus metric server hosted service + agent LLM call metrics |
 
 ## Flow diagrams
 
@@ -92,6 +93,24 @@ Each executable has its own `appsettings.json`. Common sections:
 ```
 
 Register in DI with `services.AddAgent(configuration)` in `src/LocalMind.Agent/AgentExtensions.cs`. Keys omitted from JSON use defaults from `AgentOptions` (for example `MaxConversationTurns` defaults to `20`).
+
+**Metrics** (`PrometheusMetricServerOptions` — chat host registers `AddPrometheusMetricServer`):
+
+```json
+{
+  "Metrics": {
+    "Port": 9091
+  }
+}
+```
+
+Metrics are exposed from the chat process and scraped by Prometheus. Current agent metrics:
+
+- `localmind_agent_llm_calls_total` (labels: `model`, `cache_hit`)
+- `localmind_agent_llm_tokens_total` (labels: `model`, `token_type`)
+- `localmind_agent_llm_duration_ms` (labels: `model`, `cache_hit`)
+- `localmind_agent_llm_tool_calls_requested` (label: `model`)
+- `localmind_agent_llm_iteration` (label: `model`)
 
 **Semantic cache** (`SemanticCacheOptions` — chat host registers `AddSemanticCacheOptions`):
 
@@ -156,4 +175,12 @@ If you call `Configure<T>(IConfiguration)` or `OptionsBuilder.Bind(IConfiguratio
 
 ## Docker Compose
 
-`docker-compose.yml` runs **Qdrant** with a persistent volume. Optional **TimescaleDB** / **pgAdmin** blocks are commented out for later use.
+`docker-compose.yml` runs **Qdrant**, **Prometheus**, **Loki**, and **Grafana** with persistent volumes where configured. Optional **TimescaleDB** / **pgAdmin** blocks are commented out for later use.
+
+For metrics, `prometheus.yml` includes:
+
+- Scrape job: `localmind-knowledge-chat-bot`
+- Target: `host.docker.internal:9091`
+
+Grafana dashboard JSON for the agent metrics is available at `localmind-agent-metrics-dashboard.json`.
+Import it via **Dashboards → New → Import** and select the `Prometheus` datasource.
