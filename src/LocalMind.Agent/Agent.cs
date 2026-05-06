@@ -104,13 +104,6 @@ public sealed class Agent(
 
                 response = GroundKnowledgeSources(response, kbSourceFilesOrdered, traceSnapshot);
 
-                // logger.LogInformation(
-                //     "Agent completed in {Iterations} iteration(s), {TotalMs}ms, " +
-                //     "{PromptTokens} prompt tokens, {CompletionTokens} completion tokens",
-                //     iteration + 1, sw.ElapsedMilliseconds,
-                //     response.Trace!.TotalPromptTokens,
-                //     response.Trace!.TotalCompletionTokens);
-
                 // Emit structured log events for every LLM interaction
                 logger.LogInformation("LLM call completed {@LlmTrace}", new {
                     Model = agentOptions.ModelName,
