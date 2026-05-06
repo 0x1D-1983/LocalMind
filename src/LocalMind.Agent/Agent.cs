@@ -75,9 +75,6 @@ public sealed class Agent(
             var llmResponse = await CallModelAsync(history, ct);
             var llmDoneResponse = (ChatDoneResponseStream)llmResponse;
 
-            // Accumulate token usage and KV cache timing for the trace.
-            // PromptEvalDuration from Ollama is in nanoseconds; we store milliseconds in the trace.
-            // It is the KV cache signal: fast after the first iteration when the stable prefix is cached.
             var toolCallNames = llmResponse.Message.ToolCalls?
                 .Select(tc => tc.Function?.Name ?? "unknown")
                 .ToArray() ?? [];
@@ -107,23 +104,23 @@ public sealed class Agent(
 
                 response = GroundKnowledgeSources(response, kbSourceFilesOrdered, traceSnapshot);
 
-                logger.LogInformation(
-                    "Agent completed in {Iterations} iteration(s), {TotalMs}ms, " +
-                    "{PromptTokens} prompt tokens, {CompletionTokens} completion tokens",
-                    iteration + 1, sw.ElapsedMilliseconds,
-                    response.Trace!.TotalPromptTokens,
-                    response.Trace!.TotalCompletionTokens);
+                // logger.LogInformation(
+                //     "Agent completed in {Iterations} iteration(s), {TotalMs}ms, " +
+                //     "{PromptTokens} prompt tokens, {CompletionTokens} completion tokens",
+                //     iteration + 1, sw.ElapsedMilliseconds,
+                //     response.Trace!.TotalPromptTokens,
+                //     response.Trace!.TotalCompletionTokens);
 
                 // Emit structured log events for every LLM interaction
-                // logger.LogInformation("LLM call completed {@LlmTrace}", new {
-                //     Model = agentOptions.ModelName,
-                //     PromptTokens = response.Trace!.TotalPromptTokens,
-                //     CompletionTokens = response.Trace!.TotalCompletionTokens,
-                //     DurationMs = sw.ElapsedMilliseconds,
-                //     ToolCallsRequested = toolCalls.Count,
-                //     CacheHit = false,
-                //     Iteration = iteration + 1,
-                // });
+                logger.LogInformation("LLM call completed {@LlmTrace}", new {
+                    Model = agentOptions.ModelName,
+                    PromptTokens = response.Trace!.TotalPromptTokens,
+                    CompletionTokens = response.Trace!.TotalCompletionTokens,
+                    DurationMs = sw.ElapsedMilliseconds,
+                    ToolCallsRequested = toolCalls.Count,
+                    CacheHit = false,
+                    Iteration = iteration + 1,
+                });
 
                 llmCallMetrics.RecordCompletedCall(
                     model: agentOptions.ModelName,
