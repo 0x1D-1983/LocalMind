@@ -7,20 +7,18 @@ using OllamaSharp.Models;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 using LocalMind.Ingestion;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 
 namespace LocalMind.Tools;
 
-public sealed class KnowledgeSearchTool : ITool
+public sealed class KnowledgeSearchTool(
+    ILogger<KnowledgeSearchTool> logger,
+    IOptions<KnowledgeBaseOptions> knowledgeBase,
+    OllamaApiClient ollama,
+    QdrantClient qdrant
+    ) : ITool
 {
-    private readonly ILogger<KnowledgeSearchTool> _logger;
-    private readonly OllamaApiClient _ollama;
-    private readonly QdrantClient _qdrant;
-    private readonly KnowledgeBaseOptions _knowledgeBase;
-
-    public KnowledgeSearchTool(ILogger<KnowledgeSearchTool> logger, OllamaApiClient ollama, QdrantClient qdrant, IOptions<KnowledgeBaseOptions> knowledgeBase) =>
-    (_logger, _ollama, _qdrant, _knowledgeBase) = (logger, ollama, qdrant, knowledgeBase.Value);
-
     public string Name => "search_knowledge_base";
 
     public string Description => """
@@ -28,9 +26,8 @@ public sealed class KnowledgeSearchTool : ITool
         Call this tool whenever the user asks about facts, topics, people, events, or wording that could appear
         in uploaded markdown or internal docs — including "new" files they just added.
         You may call it multiple times with different queries if the first results are thin.
-        Prefer search queries that name the subject plus the fact you need (e.g. "Jean Grey parents family John Elaine"
-        for questions about who someone's parents are — avoid overly vague single-word queries like "parents" alone).
-        Do NOT use for live database metrics or real-time counts unless the user clearly needs DB data.
+        Prefer search queries shaped as "<subject> <attribute> <related terms>" (subject, what you need to know,
+        and disambiguating context) — avoid overly vague single-word queries like "parents" alone when the subject is implied.
         Returns ranked chunks with file paths, short file names, and text excerpts.
         """;
 
@@ -81,16 +78,25 @@ public sealed class KnowledgeSearchTool : ITool
 
         try
         {
-            // Nomic's designed asymmetry
-            var embed = await _ollama.EmbedAsync(
-                new EmbedRequest { Model = _knowledgeBase.EmbeddingModel, Input = [$"search_query: {queryText}"] }, // Nomic's designed asymmetry
+            logger.LogDebug("Knowledge search: query={Query} topK={TopK}", queryText, topK);
+            var embed = await ollama.EmbedAsync(
+                new EmbedRequest 
+                {
+                    Model = knowledgeBase.Value.EmbeddingModel,
+                    Input = [$"search_query: {queryText}"]  // Nomic's designed asymmetry
+                },
                 ct);
 
-            var vector = embed.Embeddings[0];
+            if (embed?.Embeddings is not { Count: > 0 })
+            {
+                sw.Stop();
+                return ToolResult.Fail(Name, "Ollama returned no embeddings.", sw.Elapsed);
+            }
+
             // Request payload explicitly — default selector can omit payload fields, which makes chunks look empty to the model.
-            var hits = await _qdrant.SearchAsync(
-                _knowledgeBase.CollectionName,
-                vector,
+            var hits = await qdrant.SearchAsync(
+                knowledgeBase.Value.CollectionName,
+                embed.Embeddings[0],
                 limit: (ulong)topK,
                 payloadSelector: true,
                 vectorsSelector: false,
@@ -103,36 +109,38 @@ public sealed class KnowledgeSearchTool : ITool
                 if (string.IsNullOrEmpty(filename) && !string.IsNullOrEmpty(sourcePath))
                     filename = Path.GetFileName(sourcePath);
 
-                return new
-                {
-                    score = h.Score,
-                    source = sourcePath,
-                    filename,
-                    file = filename,
-                    chunk_index = PayloadLong(h.Payload, "chunk_index"),
-                    text = PayloadString(h.Payload, "text"),
-                };
+                return new SearchHit(
+                    Score: h.Score,
+                    Source: sourcePath,
+                    Filename: filename,
+                    ChunkIndex: PayloadLong(h.Payload, "chunk_index"),
+                    Text: PayloadString(h.Payload, "text")
+                );
             }).ToList();
 
             sw.Stop();
             var json = JsonSerializer.Serialize(results);
+            
             if (results.Count > 0)
             {
-                _logger.LogInformation(
+                logger.LogInformation(
                     "Knowledge search: {Count} chunk(s); top filename={File} score={Score:F4}",
                     results.Count,
-                    results[0].filename,
-                    results[0].score);
+                    results[0].Filename,
+                    results[0].Score);
             }
             else
-                _logger.LogWarning("Knowledge search returned no hits for query (length {Len})", queryText.Length);
+                logger.LogWarning("Knowledge search returned no hits for query (length {Len})", queryText.Length);
             return ToolResult.Ok(Name, json, sw.Elapsed);
         }
         catch (Exception ex)
         {
-            sw.Stop();
-            _logger.LogError(ex, "Knowledge search failed");
+            logger.LogError(ex, "Knowledge search failed");
             return ToolResult.Fail(Name, ex.Message, sw.Elapsed);
+        }
+        finally
+        {
+            sw.Stop();
         }
     }
 
@@ -149,14 +157,11 @@ public sealed class KnowledgeSearchTool : ITool
             return (long)v.DoubleValue;
         return -1;
     }
-
-    private static bool ShouldExpandEmbeddingQuery(string query)
-    {
-        var s = query.ToLowerInvariant();
-        return s.Contains("parent") || s.Contains("mother") || s.Contains("father")
-            || s.Contains("family") || s.Contains("sibling") || s.Contains("relative")
-            || s.Contains("who was") || s.Contains("who were") || s.Contains("who is")
-            || s.Contains("who are") || s.Contains("born") || s.Contains("child of")
-            || s.Contains("daughter of") || s.Contains("son of");
-    }
 }
+
+public sealed record SearchHit(
+    [property: JsonPropertyName("score")] float Score,
+    [property: JsonPropertyName("source")] string Source,
+    [property: JsonPropertyName("filename")] string Filename,
+    [property: JsonPropertyName("chunk_index")] long ChunkIndex,
+    [property: JsonPropertyName("text")] string Text);
