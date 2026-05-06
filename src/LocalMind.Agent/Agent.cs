@@ -9,19 +9,6 @@ using OllamaSharp.Models.Chat;
 
 namespace LocalMind.Agent;
 
-/// <summary>
-/// The ReAct (Reasoning + Acting) agent loop.
-///
-/// Each call to RunAsync is completely stateless — all context is built fresh
-/// and injected into the prompt. This is the fundamental constraint of LLM APIs:
-/// the model holds no memory between calls; every call must carry the full world.
-///
-/// The loop:
-///   [cache check] → [build history] → loop {
-///     [call model] → [tool calls?] → YES → [execute tools] → [append results] → repeat
-///                                  → NO  → [parse JSON] → [cache] → return
-///   }
-/// </summary>
 public sealed class Agent(
         OllamaApiClient ollama,
         ToolExecutor executor,
@@ -48,9 +35,7 @@ public sealed class Agent(
         // Load persisted turns, slot them between system prompt and current user message
         var persistedTurns = await conversationStore.GetAsync(sessionId, ct);
 
-        // ── Phase 1: Semantic cache ───────────────────────────────────────────
-        // Check before touching the model — a cache hit costs only one embedding
-        // call (~5ms) vs a full agent run (~500ms–5s depending on iterations).
+        // Semantic cache
         if (semanticCacheOptions.Enabled)
         {
             // Rewrite first — resolve pronouns against conversation history
@@ -67,14 +52,7 @@ public sealed class Agent(
             }
         }
 
-        // ── Phase 2: Build initial conversation ───────────────────────────────
-        // Message ordering for maximum KV cache reuse:
-        //   [0] System   — stable: instructions + JSON schema (never changes)
-        //   [1] User     — volatile: the query
-        //
-        // Tool definitions go in the ChatRequest.Tools field, not inline in the
-        // system prompt, so Ollama handles their serialisation format correctly.
-        
+        // Build initial conversation 
         var userMessage = new Message(ChatRole.User, userQuery);
 
         var history = new List<Message>(persistedTurns.Count + 2)
@@ -89,7 +67,7 @@ public sealed class Agent(
         var kbSourceFilesOrdered = new List<string>();
         var kbSourceFilesSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // ── Phase 3: ReAct loop ───────────────────────────────────────────────
+        // ReAct loop
         for (int iteration = 0; iteration < agentOptions.MaxIterations; iteration++)
         {
             logger.LogDebug("ReAct iteration {Iteration}", iteration);
@@ -110,16 +88,13 @@ public sealed class Agent(
                 promptEvalDurationMs: llmDoneResponse.PromptEvalDuration / 1_000_000L,
                 toolCallNames:       toolCallNames);
 
-            // IMPORTANT: Always append the assistant message to history before
-            // anything else. The model's tool call decisions must remain in context
-            // so that when we add tool results, the conversation is coherent.
             history.Add(llmResponse.Message);
 
             logger.LogInformation("LLM Thinking: {Thinking}", llmResponse.Message.Thinking);
 
             var toolCalls = llmResponse.Message.ToolCalls?.ToList() ?? [];
 
-            // ── No tool calls → final answer ─────────────────────────────────
+            // No tool calls, final answer 
             if (toolCalls.Count == 0)
             {
                 sw.Stop();
@@ -132,23 +107,23 @@ public sealed class Agent(
 
                 response = GroundKnowledgeSources(response, kbSourceFilesOrdered, traceSnapshot);
 
-                // logger.LogInformation(
-                //     "Agent completed in {Iterations} iteration(s), {TotalMs}ms, " +
-                //     "{PromptTokens} prompt tokens, {CompletionTokens} completion tokens",
-                //     iteration + 1, sw.ElapsedMilliseconds,
-                //     response.Trace!.TotalPromptTokens,
-                //     response.Trace!.TotalCompletionTokens);
+                logger.LogInformation(
+                    "Agent completed in {Iterations} iteration(s), {TotalMs}ms, " +
+                    "{PromptTokens} prompt tokens, {CompletionTokens} completion tokens",
+                    iteration + 1, sw.ElapsedMilliseconds,
+                    response.Trace!.TotalPromptTokens,
+                    response.Trace!.TotalCompletionTokens);
 
                 // Emit structured log events for every LLM interaction
-                logger.LogInformation("LLM call completed {@LlmTrace}", new {
-                    Model = agentOptions.ModelName,
-                    PromptTokens = response.Trace!.TotalPromptTokens,
-                    CompletionTokens = response.Trace!.TotalCompletionTokens,
-                    DurationMs = sw.ElapsedMilliseconds,
-                    ToolCallsRequested = toolCalls.Count,
-                    CacheHit = false,
-                    Iteration = iteration + 1,
-                });
+                // logger.LogInformation("LLM call completed {@LlmTrace}", new {
+                //     Model = agentOptions.ModelName,
+                //     PromptTokens = response.Trace!.TotalPromptTokens,
+                //     CompletionTokens = response.Trace!.TotalCompletionTokens,
+                //     DurationMs = sw.ElapsedMilliseconds,
+                //     ToolCallsRequested = toolCalls.Count,
+                //     CacheHit = false,
+                //     Iteration = iteration + 1,
+                // });
 
                 llmCallMetrics.RecordCompletedCall(
                     model: agentOptions.ModelName,
@@ -173,7 +148,7 @@ public sealed class Agent(
                 return response;
             }
 
-            // ── Tool calls → execute and feed results back ────────────────────
+            // Tool calls → execute and feed results back 
             logger.LogDebug(
                 "Iteration {Iteration}: model requested {Count} tool call(s): {Names}",
                 iteration, toolCalls.Count, string.Join(", ", toolCallNames));
@@ -198,7 +173,7 @@ public sealed class Agent(
             // tools or produce a final answer.
         }
 
-        // ── Iteration limit exceeded ──────────────────────────────────────────
+        // Iteration limit exceeded 
         sw.Stop();
         logger.LogWarning(
             "Agent exceeded max iterations ({Max}) after {ElapsedMs}ms. " +
@@ -211,20 +186,6 @@ public sealed class Agent(
             $"Consider increasing MaxIterations or simplifying the query.");
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Private: model call
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Calls Ollama and collects the complete response.
-    ///
-    /// OllamaSharp 4.x streams by default via IAsyncEnumerable.
-    /// We set Stream = false and take the final (and only) chunk, which contains
-    /// the complete message, token counts, and timing stats.
-    ///
-    /// Isolating this in one method means if OllamaSharp's API changes,
-    /// there's exactly one place to update.
-    /// </summary>
     private async Task<ChatResponseStream> CallModelAsync(
         List<Message> history,
         CancellationToken ct)
@@ -254,8 +215,6 @@ public sealed class Agent(
 
         return response;
     }
-
-    
 
     /// <summary>
     /// Models often hallucinate plausible filenames in <c>sources</c>. When <c>search_knowledge_base</c> ran,
