@@ -80,11 +80,31 @@ internal static class Program
 
                     try
                     {
-                        var response = await agent.RunAsync(sessionId, trimmed, cts.Token);
-                        Console.WriteLine();
-                        Console.WriteLine(response.Answer);
-                        if (response.Sources.Length > 0)
-                            Console.WriteLine($"Sources: {string.Join(", ", response.Sources)}");
+                        // streaming agent run
+                        // AgentResponse? final = null;
+                        // await foreach (var ev in agent.RunStreamAsync(sessionId, trimmed, cts.Token))
+                        // {
+                        //     switch (ev)
+                        //     {
+                        //         case AgentStreamText t:
+                        //             Console.Write(t.Text);
+                        //             break;
+                        //         case AgentStreamFinal f:
+                        //             final = f.Response;
+                        //             break;
+                        //     }
+                        // }
+
+                        // Console.WriteLine();
+                        // if (final is not null && final.Sources.Length > 0)
+                        //     Console.WriteLine($"Sources: {string.Join(", ", final.Sources)}");
+
+                        // non-streaming agent run
+                        var final = await agent.RunAsync(sessionId, trimmed, cts.Token);
+                        Console.WriteLine(final.Answer);
+                        if (final.Sources.Length > 0)
+                            Console.WriteLine($"Sources: {string.Join(", ", final.Sources)}");
+                            
                         Console.WriteLine();
                     }
                     catch (AgentException ex)
