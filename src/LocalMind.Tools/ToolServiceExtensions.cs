@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using LocalMind.Ollama;
 using LocalMind.Qdrant;
 using Microsoft.Extensions.Configuration;
+using Npgsql;
+using Microsoft.Extensions.Options;
 
 namespace LocalMind.Tools;
 
@@ -13,6 +15,18 @@ public static class ToolServiceExtensions
 {
     public static IServiceCollection AddToolInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddOptions<CharacterRosterOptions>()
+            .Bind(configuration.GetSection(CharacterRosterOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddSingleton(sp =>
+        {
+            var cs = sp.GetRequiredService<IOptions<CharacterRosterOptions>>().Value.ConnectionString;
+
+            return NpgsqlDataSource.Create(cs);
+        });
+
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<ToolExecutor>();
         services.AddSingleton<ToolManifestBuilder>();

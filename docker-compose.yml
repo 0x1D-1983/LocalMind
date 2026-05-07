@@ -1,30 +1,30 @@
 services:
-  # timescaledb:
-  #   image: timescale/timescaledb-ha:pg17
-  #   hostname: timescaledb
-  #   container_name: timescaledb
-  #   ports:
-  #     - "5432:5432"
-  #   environment:
-  #     - POSTGRES_DB=
-  #     - POSTGRES_USER=
-  #     - POSTGRES_PASSWORD=
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
+  timescaledb:
+    image: timescale/timescaledb-ha:pg17
+    hostname: timescaledb
+    container_name: timescaledb
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=xmen
+      - POSTGRES_USER=x-men-user
+      - POSTGRES_PASSWORD=x-men-password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
 
-  # pgadmin:
-  #   image: dpage/pgadmin4
-  #   hostname: pgadmin
-  #   container_name: pgadmin
-  #   environment:
-  #     - PGADMIN_DEFAULT_EMAIL=
-  #     - PGADMIN_DEFAULT_PASSWORD=
-  #   ports:
-  #     - "5050:80"
-  #   volumes:
-  #     - pgadmin_data:/var/lib/pgadmin
-  #   depends_on:
-  #     - timescaledb
+  pgadmin:
+    image: dpage/pgadmin4
+    hostname: pgadmin
+    container_name: pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@localmind.com
+      - PGADMIN_DEFAULT_PASSWORD=admin!#2026
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - timescaledb
 
 
   qdrant:
@@ -104,5 +104,5 @@ volumes:
   qdrant_data:
   # prometheus-data:
   # loki-data:
-  # postgres-data:
-  # pgadmin_data:
+  postgres-data:
+  pgadmin_data:

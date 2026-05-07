@@ -159,7 +159,7 @@ public sealed class KnowledgeSearchTool(
     }
 }
 
-public sealed record SearchHit(
+file sealed record SearchHit(
     [property: JsonPropertyName("score")] float Score,
     [property: JsonPropertyName("source")] string Source,
     [property: JsonPropertyName("filename")] string Filename,

@@ -39,6 +39,7 @@ internal static class Program
                 .AddSemanticCacheOptions(builder.Configuration)
                 .AddToolInfrastructure(builder.Configuration)
                 .AddTool<KnowledgeSearchTool>()
+                .AddTool<CharacterRosterTool>()
                 .AddAgent(builder.Configuration)
                 // .AddPrometheusMetricServer(builder.Configuration)
                 ;
