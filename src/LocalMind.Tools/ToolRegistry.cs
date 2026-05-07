@@ -2,16 +2,6 @@ using Microsoft.Extensions.Logging;
 
 namespace LocalMind.Tools;
 
-/// <summary>
-/// Holds all registered tools and resolves them by name.
-///
-/// Registration via DI:
-///   services.AddSingleton&lt;ITool, KnowledgeSearchTool&gt;();
-///   services.AddSingleton&lt;ITool, DatabaseQueryTool&gt;();
-///   services.AddSingleton&lt;IToolRegistry, ToolRegistry&gt;();
-///
-/// ToolRegistry receives IEnumerable&lt;ITool&gt; automatically — no manual wiring.
-/// </summary>
 public interface IToolRegistry
 {
     bool TryGet(string name, out ITool tool);
