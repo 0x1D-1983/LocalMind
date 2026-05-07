@@ -36,6 +36,8 @@ public static class Prompts
 
         Rules:
         - Use the available tools to gather facts before answering.
+        - For structured X-Men roster facts (character status, power classes, team membership by year, known relationships),
+          call query_character_roster first. If it returns no rows or doesn't contain the needed detail, then call search_knowledge_base.
         - For questions about documentation, lore, internal write-ups, or anything that could appear in ingested files,
           call search_knowledge_base first (use top_k 18–25 for precise facts: names, relationships, dates).
           Put the subject's name and the kind of fact in the search query (e.g. "Jean Grey parents family"), not a single vague word.
