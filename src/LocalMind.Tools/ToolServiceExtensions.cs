@@ -7,10 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace LocalMind.Tools;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DI Registration
-// ─────────────────────────────────────────────────────────────────────────────
-
 public static class ToolServiceExtensions
 {
     public static IServiceCollection AddToolInfrastructure(this IServiceCollection services, IConfiguration configuration)
@@ -34,7 +30,6 @@ public static class ToolServiceExtensions
         return services;
     }
 
-    /// <summary>Registers a tool implementation by its ITool interface.</summary>
     public static IServiceCollection AddTool<T>(this IServiceCollection services)
         where T : class, ITool
     {
