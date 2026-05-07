@@ -10,6 +10,15 @@ public sealed class CharacterRosterTool(
     ILogger<CharacterRosterTool> logger,
     NpgsqlDataSource db) : ITool
 {
+    private sealed record CharacterRow(
+        int Id,
+        string Codename,
+        string? RealName,
+        string? Status,
+        string[]? PowerClass,
+        string? FirstIssue,
+        string? Notes);
+
     public string Name => "query_character_roster";
 
     public string Description => """
@@ -61,6 +70,7 @@ public sealed class CharacterRosterTool(
             ["relation_type"] = new JsonObject
             {
                 ["type"] = "string",
+                ["enum"] = new JsonArray("sibling", "nemesis", "mentor", "lover", "parent", "child", "clone", "spouse")
             },
         },
     };
@@ -71,39 +81,6 @@ public sealed class CharacterRosterTool(
 
         try
         {
-            static string? GetOptionalString(JsonObject obj, string key)
-            {
-                if (!obj.TryGetPropertyValue(key, out var node) || node is null)
-                    return null;
-                return node.GetValue<string?>();
-            }
-
-            static int? GetOptionalInt(JsonObject obj, string key)
-            {
-                if (!obj.TryGetPropertyValue(key, out var node) || node is null)
-                    return null;
-                return node.GetValue<int?>();
-            }
-
-            static string[]? GetOptionalStringArray(JsonObject obj, string key)
-            {
-                if (!obj.TryGetPropertyValue(key, out var node) || node is null)
-                    return null;
-
-                if (node is not JsonArray arr)
-                    throw new InvalidOperationException($"'{key}' must be an array of strings.");
-
-                var list = new List<string>(arr.Count);
-                foreach (var item in arr)
-                {
-                    if (item is null)
-                        continue;
-                    list.Add(item.GetValue<string>());
-                }
-
-                return list.Count == 0 ? null : list.ToArray();
-            }
-
             var codename = GetOptionalString(input, "codename");
             var status = GetOptionalString(input, "status");
             var powerClass = GetOptionalStringArray(input, "power_class");
@@ -125,8 +102,9 @@ public sealed class CharacterRosterTool(
             // Name filter (codename or real name)
             if (!string.IsNullOrWhiteSpace(codename))
             {
-                var p = AddParam("p", $"%{codename.Trim()}%");
-                where.Add($"(c.codename ILIKE {p} OR c.real_name ILIKE {p})");
+                var p1 = AddParam("p", $"%{codename.Trim()}%");
+                var p2 = AddParam("p", $"%{codename.Trim()}%");
+                where.Add($"(c.codename ILIKE {p1} OR c.real_name ILIKE {p2})");
             }
 
             if (!string.IsNullOrWhiteSpace(status))
@@ -195,6 +173,11 @@ public sealed class CharacterRosterTool(
                     """);
             }
 
+            if (where.Count == 0)
+            {
+                return ToolResult.Fail(Name, "At least one filter is required.", sw.Elapsed);
+            }
+
             var sql = $"""
                 SELECT
                     c.id,
@@ -205,35 +188,58 @@ public sealed class CharacterRosterTool(
                     c.first_issue,
                     c.notes
                 FROM characters c
-                {(where.Count == 0 ? "" : "WHERE " + string.Join(" AND ", where))}
+                WHERE {string.Join(" AND ", where)}
                 ORDER BY c.codename
                 LIMIT 200;
                 """;
 
             await using var conn = await db.OpenConnectionAsync(ct);
-            await using var cmd = new NpgsqlCommand(sql, conn);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
             foreach (var p in cmdParams)
                 cmd.Parameters.Add(p);
 
-            var results = new JsonArray();
             await using var reader = await cmd.ExecuteReaderAsync(ct);
+            var rows = new List<CharacterRow>();
+
+            var ordId         = reader.GetOrdinal("id");
+            var ordCodename   = reader.GetOrdinal("codename");
+            var ordRealName   = reader.GetOrdinal("real_name");
+            var ordStatus     = reader.GetOrdinal("status");
+            var ordPowerClass = reader.GetOrdinal("power_class");
+            var ordFirstIssue = reader.GetOrdinal("first_issue");
+            var ordNotes      = reader.GetOrdinal("notes");
+            
             while (await reader.ReadAsync(ct))
+            {
+                rows.Add(new CharacterRow(
+                    Id:         reader.GetInt32(ordId),
+                    Codename:   reader.GetString(ordCodename),
+                    RealName:   reader.IsDBNull(ordRealName)    ? null : reader.GetString(ordRealName),
+                    Status:     reader.IsDBNull(ordStatus)      ? null : reader.GetString(ordStatus),
+                    PowerClass: reader.IsDBNull(ordPowerClass)  ? null : reader.GetFieldValue<string[]>(ordPowerClass),
+                    FirstIssue: reader.IsDBNull(ordFirstIssue)  ? null : reader.GetString(ordFirstIssue),
+                    Notes:      reader.IsDBNull(ordNotes)       ? null : reader.GetString(ordNotes)
+                ));
+            }
+
+            var results = new JsonArray();
+            foreach (var r in rows)
             {
                 var obj = new JsonObject
                 {
-                    ["id"] = reader.GetInt32(0),
-                    ["codename"] = reader.IsDBNull(1) ? null : reader.GetString(1),
-                    ["real_name"] = reader.IsDBNull(2) ? null : reader.GetString(2),
-                    ["status"] = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    ["first_issue"] = reader.IsDBNull(5) ? null : reader.GetString(5),
-                    ["notes"] = reader.IsDBNull(6) ? null : reader.GetString(6),
+                    ["id"] = r.Id,
+                    ["codename"] = r.Codename,
+                    ["real_name"] = r.RealName,
+                    ["status"] = r.Status,
+                    ["first_issue"] = r.FirstIssue,
+                    ["notes"] = r.Notes,
                 };
 
-                if (!reader.IsDBNull(4))
+                if (r.PowerClass is { Length: > 0 })
                 {
-                    var pc = reader.GetFieldValue<string[]>(4);
                     var arr = new JsonArray();
-                    foreach (var s in pc)
+                    foreach (var s in r.PowerClass)
                         arr.Add(s);
                     obj["power_class"] = arr;
                 }
@@ -241,9 +247,12 @@ public sealed class CharacterRosterTool(
                 {
                     obj["power_class"] = null;
                 }
-
                 results.Add(obj);
             }
+
+            logger.LogInformation(
+                "Character roster: {Count} result(s) [codename={C} status={S} team={T} year={Y}]",
+                rows.Count, codename, status, team, activeInYear);
 
             return ToolResult.Ok(Name, results.ToJsonString(new JsonSerializerOptions
             {
@@ -259,5 +268,44 @@ public sealed class CharacterRosterTool(
             logger.LogError(ex, "Character roster query failed.");
             return ToolResult.Fail(Name, ex.Message, sw.Elapsed);
         }
+        finally
+        {
+            sw.Stop();
+        }
+    }
+
+    static string? GetOptionalString(JsonObject obj, string key)
+    {
+        if (!obj.TryGetPropertyValue(key, out var node) || node is null)
+            return null;
+        return node.GetValue<string?>();
+    }
+
+    static int? GetOptionalInt(JsonObject obj, string key)
+    {
+        if (!obj.TryGetPropertyValue(key, out var node) || node is null)
+            return null;
+        return node.GetValue<int?>();
+    }
+
+    static string[]? GetOptionalStringArray(JsonObject obj, string key)
+    {
+        if (!obj.TryGetPropertyValue(key, out var node) || node is null)
+            return null;
+
+        if (node is not JsonArray arr)
+        {
+            return [];
+        }
+
+        var list = new List<string>(arr.Count);
+        foreach (var item in arr)
+        {
+            if (item is null)
+                continue;
+            list.Add(item.GetValue<string>());
+        }
+
+        return list.Count == 0 ? null : list.ToArray();
     }
 }

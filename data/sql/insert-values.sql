@@ -31,6 +31,8 @@ INSERT INTO public.relationships(character_a, character_b, relation)
     (4, 7, 'lover'), -- Havok and Goblin Queen
     (2, 1, 'mentor'), -- Professor X and Phoenix
     (2, 3, 'mentor'), -- Professor X and Cyclops
-    (7, 6, 'mother'), -- Goblin Queen and Cable
-    (3, 6, 'father'), -- Cyclops and Cable
+    (7, 6, 'parent'), -- Goblin Queen and Cable
+    (3, 6, 'parent'), -- Cyclops and Cable,
+    (6, 7, 'child'), -- Cable and Goblin Queen
+    (6, 3, 'child'), -- Cable and Cyclops
     (7, 1, 'clone'); -- Goblin Queen and Phoenix
