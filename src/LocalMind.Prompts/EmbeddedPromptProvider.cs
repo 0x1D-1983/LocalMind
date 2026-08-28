@@ -31,10 +31,10 @@ public sealed class EmbeddedPromptProvider(ILogger<EmbeddedPromptProvider> logge
 
     private Prompt Load(string name, string? version)
     {
-        var resourceName = FindResource(name, version)
+        var match = FindResource(name, version)
             ?? throw new PromptNotFoundException(name, version);
 
-        using var stream = _assembly.GetManifestResourceStream(resourceName)
+        using var stream = _assembly.GetManifestResourceStream(match.ResourceName)
             ?? throw new PromptNotFoundException(name, version);
         using var reader = new StreamReader(stream);
         var content = reader.ReadToEnd().Trim();
@@ -45,25 +45,65 @@ public sealed class EmbeddedPromptProvider(ILogger<EmbeddedPromptProvider> logge
         return new Prompt
         {
             Name = name,
-            Version = string.IsNullOrWhiteSpace(version) ? "latest" : version.Trim(),
+            Version = match.Version,
             Content = content
         };
     }
 
-    private string? FindResource(string name, string? version)
+    private ResourceMatch? FindResource(string name, string? version)
     {
-        var names = _assembly.GetManifestResourceNames();
+        var candidates = _assembly.GetManifestResourceNames()
+            .Select(resource => TryParse(resource, name))
+            .OfType<ResourceMatch>()
+            .ToList();
+
+        if (candidates.Count == 0)
+            return null;
+
         if (string.IsNullOrWhiteSpace(version)
             || version.Equals("latest", StringComparison.OrdinalIgnoreCase))
         {
-            return names.FirstOrDefault(n =>
-                n.EndsWith($".{name}.md", StringComparison.OrdinalIgnoreCase));
+            return candidates.MaxBy(c => c.Number);
         }
 
-        return names.FirstOrDefault(n =>
-            n.EndsWith($".{name}.{version}.md", StringComparison.OrdinalIgnoreCase));
+        var requested = NormalizeVersion(version);
+        return requested is null
+            ? null
+            : candidates.FirstOrDefault(c =>
+                c.Version.Equals(requested, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static ResourceMatch? TryParse(string resourceName, string promptName)
+    {
+        var marker = $".{promptName}.v";
+        var index = resourceName.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+            return null;
+
+        var rest = resourceName[(index + marker.Length)..];
+        if (!rest.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var numberPart = rest[..^4];
+        if (!int.TryParse(numberPart, out var number) || number < 1)
+            return null;
+
+        return new ResourceMatch(resourceName, $"v{number}", number);
+    }
+
+    private static string? NormalizeVersion(string version)
+    {
+        var trimmed = version.Trim();
+        if (trimmed.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+            trimmed = trimmed[1..];
+
+        return int.TryParse(trimmed, out var number) && number >= 1
+            ? $"v{number}"
+            : null;
     }
 
     private static string CacheKey(string name, string? version) =>
         $"{name}:{version ?? "latest"}";
+
+    private sealed record ResourceMatch(string ResourceName, string Version, int Number);
 }
