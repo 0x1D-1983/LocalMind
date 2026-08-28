@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LocalMind.Prompts;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
@@ -19,6 +20,7 @@ public sealed class StructuredOutputParser : IStructuredOutputParser
     private readonly OllamaApiClient _ollama;
     private readonly AgentOptions _options;
     private readonly ILogger<StructuredOutputParser> _logger;
+    private readonly IPromptProvider _prompts;
 
     public static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,11 +31,13 @@ public sealed class StructuredOutputParser : IStructuredOutputParser
     public StructuredOutputParser(
         OllamaApiClient ollama,
         IOptions<AgentOptions> options,
-        ILogger<StructuredOutputParser> logger)
+        ILogger<StructuredOutputParser> logger,
+        IPromptProvider prompts)
     {
         _ollama = ollama;
         _options = options.Value;
         _logger = logger;
+        _prompts = prompts;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -120,13 +124,15 @@ public sealed class StructuredOutputParser : IStructuredOutputParser
         string validationError,
         CancellationToken ct)
     {
+        var systemPrompt = await _prompts.GetAsync(PromptNames.KnowledgeAgent, ct: ct);
+
         var correctionRequest = new ChatRequest
         {
             Model  = _options.ModelName,
             Stream = false,
             Messages =
             [
-                new(ChatRole.System, Prompts.SystemPrompt),
+                new(ChatRole.System, systemPrompt.Content),
                 new(ChatRole.User,
                     $"""
                     Your previous response was not valid JSON.

@@ -21,6 +21,7 @@
     <ProjectReference Include="..\LocalMind.Ollama\LocalMind.Ollama.csproj" />
     <ProjectReference Include="..\LocalMind.Cache\LocalMind.Cache.csproj" />
     <ProjectReference Include="..\LocalMind.Telemetry\LocalMind.Telemetry.csproj" />
+    <ProjectReference Include="..\LocalMind.Prompts\LocalMind.Prompts.csproj" />
   </ItemGroup>
 
 </Project>

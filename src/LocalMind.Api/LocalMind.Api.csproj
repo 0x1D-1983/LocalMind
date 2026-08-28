@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LocalMind.Application\LocalMind.Application.csproj" />
+    <ProjectReference Include="..\LocalMind.Prompts\LocalMind.Prompts.csproj" />
     <ProjectReference Include="..\LocalMind.Telemetry\LocalMind.Telemetry.csproj" />
   </ItemGroup>
 

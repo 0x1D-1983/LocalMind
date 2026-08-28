@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using LocalMind.Cache;
+using LocalMind.Prompts;
 using LocalMind.Telemetry;
 using LocalMind.Tools;
 using Microsoft.Extensions.Logging;
@@ -22,7 +23,8 @@ public sealed class Agent(
         ILogger<Agent> logger,
         IStructuredOutputParser structuredOutputParser,
         QueryRewriter queryRewriter,
-        LlmCallMetrics llmCallMetrics)
+        LlmCallMetrics llmCallMetrics,
+        IPromptProvider prompts)
 {
     public async Task<AgentResponse> RunAsync(
         string sessionId,
@@ -54,12 +56,14 @@ public sealed class Agent(
             }
         }
 
+        var systemPrompt = await prompts.GetAsync(PromptNames.KnowledgeAgent, ct: ct);
+
         // Build initial conversation 
         var userMessage = new Message(ChatRole.User, userQuery);
 
         var history = new List<Message>(persistedTurns.Count + 2)
         {
-            new(ChatRole.System, Prompts.SystemPrompt)
+            new(ChatRole.System, systemPrompt.Content)
         };
 
         history.AddRange(persistedTurns);   // previous clean turns
@@ -204,10 +208,12 @@ public sealed class Agent(
             }
         }
 
+        var systemPrompt = await prompts.GetAsync(PromptNames.KnowledgeAgent, ct: ct);
+
         var userMessage = new Message(ChatRole.User, userQuery);
         var history = new List<Message>(persistedTurns.Count + 2)
         {
-            new(ChatRole.System, Prompts.SystemPrompt)
+            new(ChatRole.System, systemPrompt.Content)
         };
         history.AddRange(persistedTurns);
         history.Add(userMessage);

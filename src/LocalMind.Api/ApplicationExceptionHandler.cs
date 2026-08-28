@@ -1,5 +1,6 @@
 using LocalMind.Agent;
 using LocalMind.Application.Agents;
+using LocalMind.Prompts;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,6 +17,7 @@ internal sealed class ApplicationExceptionHandler : IExceptionHandler
         {
             UnknownAgentException => (StatusCodes.Status404NotFound, "Unknown agent"),
             AgentException => (StatusCodes.Status502BadGateway, "Agent failed"),
+            PromptNotFoundException => (StatusCodes.Status500InternalServerError, "Prompt not found"),
             ArgumentException => (StatusCodes.Status400BadRequest, "Invalid request"),
             _ => ((int?)null, (string?)null)
         };

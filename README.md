@@ -89,6 +89,7 @@ dotnet run --project src/LocalMind.KnowledgeChatBot/LocalMind.KnowledgeChatBot.c
 | **LocalMind.KnowledgeChatBot** | Local development host / CLI client: in-process REPL by default, or `--api` against LocalMind.Api |
 | **LocalMind.IngestConsoleApp** | CLI to ingest a single file into Qdrant (chunk + embed + upsert) |
 | **LocalMind.Agent** | ReAct loop, structured JSON output parsing, traces, conversation store, query rewriter, semantic cache integration |
+| **LocalMind.Prompts** | Prompt catalog (`IPromptProvider`). Agents load named prompts (e.g. `knowledge-agent`) without knowing the source |
 | **LocalMind.Cache** | `SemanticCache<T>`, `EntityExtractor` (named entities → Qdrant payload + search filter), options, `AddSemanticCacheOptions`, hosted initializer (ensure Qdrant collection) |
 | **LocalMind.Tools** | Tool registry, executor, manifests (`search_knowledge_base`, `calculate`, `query_database` stub, …) |
 | **LocalMind.Ingestion** | Document chunking, embedding via Ollama, Qdrant upsert; `KnowledgeBaseOptions` + `DocumentIngestOptions` |

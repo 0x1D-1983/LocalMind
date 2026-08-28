@@ -1,4 +1,5 @@
 using LocalMind.Cache;
+using LocalMind.Prompts;
 using LocalMind.Telemetry;
 using LocalMind.Tools;
 using Microsoft.Extensions.Configuration;
@@ -23,6 +24,8 @@ public static class AgentExtensions
             .Bind(configuration.GetSection(QueryRewriterOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+
+        services.AddPrompts();
 
         services.AddSingleton<IConversationStore, InMemoryConversationStore>();
         services.AddSingleton<IStructuredOutputParser, StructuredOutputParser>();
@@ -64,9 +67,10 @@ public static class AgentExtensions
             var structuredOutputParser = sp.GetRequiredService<IStructuredOutputParser>();
             var queryRewriter = sp.GetRequiredService<QueryRewriter>();
             var llmCallMetrics = sp.GetRequiredService<LlmCallMetrics>();
+            var prompts = sp.GetRequiredService<IPromptProvider>();
             
             return new Agent(ollama, executor, manifest, conversationStore, semanticCache, 
-                agentOptions, semanticCacheOptions, logger, structuredOutputParser, queryRewriter, llmCallMetrics);
+                agentOptions, semanticCacheOptions, logger, structuredOutputParser, queryRewriter, llmCallMetrics, prompts);
         });
 
         return services;
