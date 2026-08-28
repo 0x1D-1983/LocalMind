@@ -1,17 +1,9 @@
 ﻿using LocalMind.Agent;
-using LocalMind.Cache;
-using LocalMind.Ingestion;
-using LocalMind.Ollama;
-using LocalMind.Qdrant;
-using LocalMind.Telemetry;
-using LocalMind.Tools;
+using LocalMind.Application;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
-
-// Class and namespace are both named Agent; unqualified `Agent` resolves to the namespace here.
-using AgentApp = LocalMind.Agent.Agent;
 
 namespace LocalMind.KnowledgeChatBot;
 
@@ -20,6 +12,8 @@ internal static class Program
     public static async Task<int> Main(string[] args)
     {
         Directory.SetCurrentDirectory(AppContext.BaseDirectory);
+
+        var useApi = args.Any(a => a.Equals("--api", StringComparison.OrdinalIgnoreCase));
 
         var builder = Host.CreateApplicationBuilder(args);
 
@@ -32,17 +26,26 @@ internal static class Program
 
         try
         {
-            builder.Services
-                .AddOllama(builder.Configuration)
-                .AddQdrant(builder.Configuration)
-                .AddKnowledgeBaseOptions(builder.Configuration)
-                .AddSemanticCacheOptions(builder.Configuration)
-                .AddToolInfrastructure(builder.Configuration)
-                .AddTool<KnowledgeSearchTool>()
-                .AddTool<CharacterRosterTool>()
-                .AddAgent(builder.Configuration)
-                // .AddPrometheusMetricServer(builder.Configuration)
-                ;
+            if (useApi)
+            {
+                var baseUrl = builder.Configuration["Api:BaseUrl"];
+                if (string.IsNullOrWhiteSpace(baseUrl))
+                {
+                    Console.Error.WriteLine("Api:BaseUrl is required when running with --api.");
+                    return 1;
+                }
+
+                builder.Services.AddHttpClient<IChatClient, HttpChatClient>(client =>
+                {
+                    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+                    client.Timeout = TimeSpan.FromMinutes(10);
+                });
+            }
+            else
+            {
+                builder.Services.AddLocalMindApplication(builder.Configuration);
+                builder.Services.AddSingleton<IChatClient, InProcessChatClient>();
+            }
 
             using var app = builder.Build();
 
@@ -55,14 +58,17 @@ internal static class Program
 
             await app.StartAsync(cts.Token);
 
-            var agent = app.Services.GetRequiredService<AgentApp>();
+            var chat = app.Services.GetRequiredService<IChatClient>();
             var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Chat");
 
-            logger.LogInformation("Knowledge chat — type your question, or 'exit' to quit.");
+            if (useApi)
+                logger.LogInformation("Knowledge chat CLI — talking to {BaseUrl}. Type your question, or 'exit' to quit.", builder.Configuration["Api:BaseUrl"]);
+            else
+                logger.LogInformation("Knowledge chat (in-process) — type your question, or 'exit' to quit. Use --api to call LocalMind.Api.");
 
             try
             {
-                var sessionId = Guid.NewGuid().ToString("N"); // one per console session
+                var sessionId = Guid.NewGuid().ToString("N");
                 logger.LogInformation("SessionId: {SessionId}", sessionId);
 
                 while (!cts.IsCancellationRequested)
@@ -81,37 +87,22 @@ internal static class Program
 
                     try
                     {
-                        // streaming agent run
-                        // AgentResponse? final = null;
-                        // await foreach (var ev in agent.RunStreamAsync(sessionId, trimmed, cts.Token))
-                        // {
-                        //     switch (ev)
-                        //     {
-                        //         case AgentStreamText t:
-                        //             Console.Write(t.Text);
-                        //             break;
-                        //         case AgentStreamFinal f:
-                        //             final = f.Response;
-                        //             break;
-                        //     }
-                        // }
+                        var response = await chat.SendAsync(sessionId, trimmed, cts.Token);
+                        Console.WriteLine(response.Answer);
+                        if (response.Sources.Length > 0)
+                            Console.WriteLine($"Sources: {string.Join(", ", response.Sources)}");
 
-                        // Console.WriteLine();
-                        // if (final is not null && final.Sources.Length > 0)
-                        //     Console.WriteLine($"Sources: {string.Join(", ", final.Sources)}");
-
-                        // non-streaming agent run
-                        var final = await agent.RunAsync(sessionId, trimmed, cts.Token);
-                        Console.WriteLine(final.Answer);
-                        if (final.Sources.Length > 0)
-                            Console.WriteLine($"Sources: {string.Join(", ", final.Sources)}");
-                            
                         Console.WriteLine();
                     }
                     catch (AgentException ex)
                     {
                         logger.LogError(ex, "Agent failed");
                         Console.WriteLine($"Error: {ex.Message}");
+                    }
+                    catch (HttpRequestException ex)
+                    {
+                        logger.LogError(ex, "API request failed");
+                        Console.WriteLine($"Error: could not reach LocalMind.Api ({ex.Message}). Start the API, or omit --api to run in-process.");
                     }
                 }
             }

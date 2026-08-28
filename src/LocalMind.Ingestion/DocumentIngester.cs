@@ -14,24 +14,26 @@ public class DocumentIngester(
     DocumentIngestOptions chunkOpts,
     ILogger<DocumentIngester> logger)
 {
-    public async Task IngestAsync(string filePath, CancellationToken ct = default)
+    public async Task<DocumentIngestResult> IngestAsync(string filePath, CancellationToken ct = default)
     {
-        if (!await qdrant.CollectionExistsAsync(knowledgeBase.CollectionName, cancellationToken: ct))
-        {
-            logger.LogInformation("Creating Qdrant collection {CollectionName}", knowledgeBase.CollectionName);
-            await qdrant.CreateCollectionAsync(knowledgeBase.CollectionName, new VectorParams {
-                Size = knowledgeBase.VectorSize,
-                Distance = Distance.Cosine
-            }, cancellationToken: ct);
-        }
-
-        // Always ensure indexes exist — idempotent, safe to call every time
-        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "filename", PayloadSchemaType.Keyword, cancellationToken: ct);
-        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "source", PayloadSchemaType.Keyword, cancellationToken: ct);
-
         var text = await File.ReadAllTextAsync(filePath, cancellationToken: ct);
-        var chunks = ChunkByParagraphs(text, chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
-        var docLabel = Path.GetFileName(filePath);
+        return await IngestTextAsync(Path.GetFileName(filePath), text, source: filePath, ct);
+    }
+
+    public async Task<DocumentIngestResult> IngestTextAsync(
+        string fileName,
+        string text,
+        string? source = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            throw new ArgumentException("File name is required.", nameof(fileName));
+
+        await EnsureCollectionAsync(ct);
+
+        var chunks = ChunkByParagraphs(text ?? "", chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
+        var docLabel = Path.GetFileName(fileName);
+        var sourceLabel = string.IsNullOrWhiteSpace(source) ? docLabel : source;
 
         // 1 call to Ollama for all chunks
         var inputs = chunks.Select(c => $"search_document: {c}").ToList();
@@ -51,7 +53,7 @@ public class DocumentIngester(
             Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(docLabel, index).ToString() },
             Vectors = allEmbeddings[index],  // aligned by index
             Payload = {
-                ["source"] = filePath,
+                ["source"] = sourceLabel,
                 ["filename"] = docLabel,
                 ["chunk_index"] = index,
                 ["chunk_total"] = chunks.Count,
@@ -66,6 +68,23 @@ public class DocumentIngester(
             await qdrant.UpsertAsync(knowledgeBase.CollectionName, batch, cancellationToken: ct);
 
         logger.LogInformation("Ingested {File}: {ChunkCount} chunks into {Collection}", docLabel, chunks.Count, knowledgeBase.CollectionName);
+
+        return new DocumentIngestResult(docLabel, chunks.Count, knowledgeBase.CollectionName);
+    }
+
+    private async Task EnsureCollectionAsync(CancellationToken ct)
+    {
+        if (!await qdrant.CollectionExistsAsync(knowledgeBase.CollectionName, cancellationToken: ct))
+        {
+            logger.LogInformation("Creating Qdrant collection {CollectionName}", knowledgeBase.CollectionName);
+            await qdrant.CreateCollectionAsync(knowledgeBase.CollectionName, new VectorParams {
+                Size = knowledgeBase.VectorSize,
+                Distance = Distance.Cosine
+            }, cancellationToken: ct);
+        }
+
+        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "filename", PayloadSchemaType.Keyword, cancellationToken: ct);
+        await qdrant.CreatePayloadIndexAsync(knowledgeBase.CollectionName, "source", PayloadSchemaType.Keyword, cancellationToken: ct);
     }
 
     /// <summary>

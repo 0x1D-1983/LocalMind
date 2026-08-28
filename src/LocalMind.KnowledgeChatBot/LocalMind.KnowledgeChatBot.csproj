@@ -1,14 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\LocalMind.Agent\LocalMind.Agent.csproj" />
-    <ProjectReference Include="..\LocalMind.Ingestion\LocalMind.Ingestion.csproj" />
-    <ProjectReference Include="..\LocalMind.Telemetry\LocalMind.Telemetry.csproj" />
+    <ProjectReference Include="..\LocalMind.Application\LocalMind.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.7" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.7" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.7" />
     <PackageReference Include="Serilog" Version="4.2.0" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="9.0.0" />

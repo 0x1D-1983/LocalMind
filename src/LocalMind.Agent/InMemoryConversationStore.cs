@@ -13,6 +13,9 @@ public sealed class InMemoryConversationStore : IConversationStore
     public InMemoryConversationStore(IOptions<AgentOptions> options)
         => _options = options.Value;
 
+    public Task<bool> ExistsAsync(string sessionId, CancellationToken ct = default)
+        => Task.FromResult(_sessions.ContainsKey(sessionId));
+
     public Task<IReadOnlyList<Message>> GetAsync(string sessionId, CancellationToken ct = default)
     {
         if (_sessions.TryGetValue(sessionId, out var history))

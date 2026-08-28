@@ -43,19 +43,50 @@ dotnet run --project src/LocalMind.IngestConsoleApp/LocalMind.IngestConsoleApp.c
 
 Configuration is loaded from `src/LocalMind.IngestConsoleApp/appsettings.json` (`Serilog`, `KnowledgeBase`, `DocumentIngest`, `Ollama`, `Qdrant`).
 
-**4. Run the knowledge chat console**
+**4. Run the API** (production application boundary)
 
 ```bash
-dotnet run --project src/LocalMind.KnowledgeChatBot/LocalMind.KnowledgeChatBot.csproj
+dotnet run --project src/LocalMind.Api/LocalMind.Api.csproj
 ```
 
-The chat app builds a generic `IHost` and calls **`StartAsync`** so hosted services run (including startup that ensures the semantic-cache Qdrant collection exists). Type questions at the prompt; use `exit` or `quit` to leave. Ensure the chat model in `Agent:ModelName` matches a pulled Ollama tag (for example `qwen3:8b`), and that the Qdrant **knowledge** collection name matches what you used at ingest time (default `knowledge`). The semantic cache uses a separate collection (default `semantic_cache`); align `SemanticCache` options with your embedding model and vector width.
+Listens on [http://localhost:5080](http://localhost:5080). Endpoints:
+
+| Method | Path | Role |
+|--------|------|------|
+| `POST` | `/api/chat` | Chat against the knowledge agent |
+| `POST` | `/api/agents/{agent}/invoke` | Invoke a named agent (`knowledge`) |
+| `GET`  | `/api/conversations/{id}` | Load a conversation |
+| `POST` | `/api/knowledge/documents` | Ingest a document (JSON or multipart file) |
+
+HTTP handlers stay thin: they bind a request DTO, call an application service (`IChatService`, `IAgentInvokeService`, `IConversationService`, `IKnowledgeDocumentService`), and return the result. Agent logic stays in `LocalMind.Agent`.
+
+You can also ingest through the API instead of the ingest console:
+
+```bash
+curl -X POST http://localhost:5080/api/knowledge/documents \
+  -H 'Content-Type: application/json' \
+  -d '{"fileName":"notes.md","content":"# Notes\n..."}'
+```
+
+**5. Run the knowledge chat CLI** (local development host)
+
+```bash
+# In-process local host (default) — same application services as the API, no HTTP
+dotnet run --project src/LocalMind.KnowledgeChatBot/LocalMind.KnowledgeChatBot.csproj
+
+# CLI client against a running LocalMind.Api
+dotnet run --project src/LocalMind.KnowledgeChatBot/LocalMind.KnowledgeChatBot.csproj -- --api
+```
+
+`--api` posts to `POST /api/chat` using `Api:BaseUrl` (default `http://localhost:5080`). Type questions at the prompt; use `exit` or `quit` to leave. Ensure the chat model in `Agent:ModelName` matches a pulled Ollama tag (for example `qwen3:8b`), and that the Qdrant **knowledge** collection name matches what you used at ingest time (default `knowledge`). The semantic cache uses a separate collection (default `semantic_cache`); align `SemanticCache` options with your embedding model and vector width.
 
 ## Solution layout
 
 | Project | Role |
 |--------|------|
-| **LocalMind.KnowledgeChatBot** | Console host: Serilog, `IHost` startup, agent, knowledge search tool, Ollama + Qdrant |
+| **LocalMind.Api** | Production HTTP host (Minimal APIs). Thin endpoints → application services → agent |
+| **LocalMind.Application** | AI application services: `IChatService`, agent invoke, conversations, document ingest; `AddLocalMindApplication` composition |
+| **LocalMind.KnowledgeChatBot** | Local development host / CLI client: in-process REPL by default, or `--api` against LocalMind.Api |
 | **LocalMind.IngestConsoleApp** | CLI to ingest a single file into Qdrant (chunk + embed + upsert) |
 | **LocalMind.Agent** | ReAct loop, structured JSON output parsing, traces, conversation store, query rewriter, semantic cache integration |
 | **LocalMind.Cache** | `SemanticCache<T>`, `EntityExtractor` (named entities → Qdrant payload + search filter), options, `AddSemanticCacheOptions`, hosted initializer (ensure Qdrant collection) |
@@ -79,7 +110,7 @@ The chat app builds a generic `IHost` and calls **`StartAsync`** so hosted servi
 
 Each executable has its own `appsettings.json`. Common sections:
 
-**Agent** (`AgentOptions` — see `src/LocalMind.KnowledgeChatBot/appsettings.json`):
+**Agent** (`AgentOptions` — see `src/LocalMind.Api/appsettings.json`):
 
 ```json
 {
@@ -92,9 +123,9 @@ Each executable has its own `appsettings.json`. Common sections:
 }
 ```
 
-Register in DI with `services.AddAgent(configuration)` in `src/LocalMind.Agent/AgentExtensions.cs`. Keys omitted from JSON use defaults from `AgentOptions` (for example `MaxConversationTurns` defaults to `20`).
+Register in DI with `services.AddAgent(configuration)` in `src/LocalMind.Agent/AgentExtensions.cs`. Hosts call `AddLocalMindApplication` in `src/LocalMind.Application/DependencyInjection.cs`, which wires the agent, tools, cache, ingest, and application services. Keys omitted from JSON use defaults from `AgentOptions` (for example `MaxConversationTurns` defaults to `20`).
 
-**Metrics** (`PrometheusMetricServerOptions` — chat host registers `AddPrometheusMetricServer`):
+**Metrics** (`PrometheusMetricServerOptions` — API host registers `AddPrometheusMetricServer`):
 
 ```json
 {
@@ -104,7 +135,7 @@ Register in DI with `services.AddAgent(configuration)` in `src/LocalMind.Agent/A
 }
 ```
 
-Metrics are exposed from the chat process and scraped by Prometheus. Current agent metrics:
+Metrics are exposed from the API process and scraped by Prometheus. Current agent metrics:
 
 - `localmind_agent_llm_calls_total` (labels: `model`, `cache_hit`)
 - `localmind_agent_llm_tokens_total` (labels: `model`, `token_type`)
@@ -112,7 +143,7 @@ Metrics are exposed from the chat process and scraped by Prometheus. Current age
 - `localmind_agent_llm_tool_calls_requested` (label: `model`)
 - `localmind_agent_llm_iteration` (label: `model`)
 
-**Semantic cache** (`SemanticCacheOptions` — chat host registers `AddSemanticCacheOptions`):
+**Semantic cache** (`SemanticCacheOptions` — registered by `AddLocalMindApplication`):
 
 ```json
 {
@@ -164,7 +195,7 @@ Used before the cache lookup when there is conversation history: the model rewri
 }
 ```
 
-**Document ingest** (`DocumentIngestOptions` — ingest console only; chunking plus batch sizes for embed/upsert):
+**Document ingest** (`DocumentIngestOptions` — API document ingest and ingest console; chunking plus batch sizes for embed/upsert):
 
 ```json
 {
@@ -177,7 +208,7 @@ Used before the cache lookup when there is conversation history: the model rewri
 }
 ```
 
-The chat host binds **`KnowledgeBase`**, **`SemanticCache`**, and **`EntityExtractor`** options (via `AddSemanticCacheOptions`); the ingest app binds **`KnowledgeBase`** and **`DocumentIngest`**. `EmbeddingModel` and `VectorSize` define the index contract for the knowledge collection (ingest and search must agree). The semantic cache uses the **`SemanticCache`** section’s model and dimensions for its own collection.
+The API and in-process chat host bind **`KnowledgeBase`**, **`DocumentIngest`**, **`SemanticCache`**, and **`EntityExtractor`** options (via `AddLocalMindApplication`); the ingest app binds **`KnowledgeBase`** and **`DocumentIngest`**. `EmbeddingModel` and `VectorSize` define the index contract for the knowledge collection (ingest and search must agree). The semantic cache uses the **`SemanticCache`** section’s model and dimensions for its own collection.
 
 **Ollama** (`OllamaApiClientOptions`) and **Qdrant** (`QdrantClientOptions`): host, port, API key, timeouts — see sample `appsettings.json` files in each project.
 
@@ -191,7 +222,7 @@ If you call `Configure<T>(IConfiguration)` or `OptionsBuilder.Bind(IConfiguratio
 
 For metrics, `prometheus.yml` includes:
 
-- Scrape job: `localmind-knowledge-chat-bot`
+- Scrape job: `localmind-api`
 - Target: `host.docker.internal:9091`
 
 Grafana dashboard JSON for the agent metrics is available at `localmind-agent-metrics-dashboard.json`.

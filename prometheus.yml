@@ -21,7 +21,7 @@ remote_write:
         action: drop
 
 scrape_configs:
-  - job_name: 'localmind-knowledge-chat-bot'
+  - job_name: 'localmind-api'
     static_configs:
       - targets: ['host.docker.internal:9091']
 
