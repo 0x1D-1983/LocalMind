@@ -199,6 +199,11 @@ public sealed class CharacterRosterTool(
             foreach (var p in cmdParams)
                 cmd.Parameters.Add(p);
 
+            logger.LogInformation(
+                "Character roster SQL: {Sql} Parameters: {Parameters}",
+                sql,
+                string.Join(", ", cmdParams.Select(p => $"{p.ParameterName}={FormatParamValue(p.Value)}")));
+
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             var rows = new List<CharacterRow>();
 
@@ -308,4 +313,11 @@ public sealed class CharacterRosterTool(
 
         return list.Count == 0 ? null : list.ToArray();
     }
+
+    static string FormatParamValue(object? value) => value switch
+    {
+        null or DBNull => "NULL",
+        string[] arr => $"[{string.Join(", ", arr)}]",
+        _ => value.ToString() ?? "NULL"
+    };
 }
