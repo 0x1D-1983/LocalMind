@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 
@@ -23,7 +24,8 @@ public static class SemanticCacheExtensions
         {
             var ollama = sp.GetRequiredService<OllamaApiClient>();
             var options = sp.GetRequiredService<IOptions<EntityExtractorOptions>>().Value;
-            return new EntityExtractor(ollama, options);
+            var logger = sp.GetRequiredService<ILogger<EntityExtractor>>();
+            return new EntityExtractor(ollama, options, logger);
         });
 
         return services;

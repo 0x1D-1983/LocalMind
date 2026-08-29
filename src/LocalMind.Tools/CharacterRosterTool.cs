@@ -66,8 +66,15 @@ public sealed class CharacterRosterTool(
             },
             ["relation_type"] = new JsonObject
             {
-                ["type"] = "string",
-                ["enum"] = new JsonArray("sibling", "nemesis", "mentor", "lover", "parent", "child", "clone", "spouse")
+                ["type"] = "array",
+                ["description"] = "Match characters that have ANY of these relationship kinds to relation_to (e.g. spouse, lover).",
+                ["items"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["enum"] = new JsonArray("sibling", "nemesis", "mentor", "lover", "parent", "child", "clone", "spouse"),
+                },
+                ["uniqueItems"] = true,
+                ["minItems"] = 1,
             },
         },
     };
@@ -84,7 +91,7 @@ public sealed class CharacterRosterTool(
             var team = GetOptionalString(input, "team");
             var activeInYear = GetOptionalInt(input, "active_in_year");
             var relationTo = GetOptionalString(input, "relation_to");
-            var relationType = GetOptionalString(input, "relation_type");
+            var relationTypes = GetOptionalStringOrArray(input, "relation_type");
 
             var where = new List<string>();
             var cmdParams = new List<NpgsqlParameter>();
@@ -161,13 +168,22 @@ public sealed class CharacterRosterTool(
             }
 
             // Relationships via EXISTS. Requires both relation_to and relation_type to avoid vague scans.
-            if (!string.IsNullOrWhiteSpace(relationTo) || !string.IsNullOrWhiteSpace(relationType))
+            if (!string.IsNullOrWhiteSpace(relationTo) || relationTypes is { Length: > 0 })
             {
-                if (string.IsNullOrWhiteSpace(relationTo) || string.IsNullOrWhiteSpace(relationType))
+                if (string.IsNullOrWhiteSpace(relationTo) || relationTypes is not { Length: > 0 })
                     return ToolResult.Fail(Name, "Provide both 'relation_to' and 'relation_type' together.", sw.Elapsed);
 
-                var toP = AddParam("p", relationTo.Trim());
-                var typeP = AddParam("p", relationType.Trim());
+                var types = relationTypes
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Select(s => s.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                if (types.Length == 0)
+                    return ToolResult.Fail(Name, "Provide both 'relation_to' and 'relation_type' together.", sw.Elapsed);
+
+                var toP = AddParam("p", $"%{relationTo.Trim()}%");
+                var typeP = AddParam("p", types);
 
                 // Match either direction in relationships (a->b or b->a).
                 where.Add($"""
@@ -179,7 +195,7 @@ public sealed class CharacterRosterTool(
                             WHEN r.character_a = c.id THEN r.character_b
                             ELSE r.character_a
                           END
-                        WHERE r.relation = {typeP}
+                        WHERE r.relation ILIKE ANY ({typeP})
                           AND (r.character_a = c.id OR r.character_b = c.id)
                           AND (other.codename ILIKE {toP} OR other.real_name ILIKE {toP})
                     )
@@ -311,10 +327,30 @@ public sealed class CharacterRosterTool(
         if (!obj.TryGetPropertyValue(key, out var node) || node is null)
             return null;
 
-        if (node is not JsonArray arr)
+        return ReadStringArray(node);
+    }
+
+    /// <summary>
+    /// Models often pass a single enum as a string or several as an array.
+    /// </summary>
+    static string[]? GetOptionalStringOrArray(JsonObject obj, string key)
+    {
+        if (!obj.TryGetPropertyValue(key, out var node) || node is null)
+            return null;
+
+        if (node is JsonValue)
         {
-            return [];
+            var value = node.GetValue<string?>();
+            return string.IsNullOrWhiteSpace(value) ? null : [value.Trim()];
         }
+
+        return ReadStringArray(node);
+    }
+
+    static string[]? ReadStringArray(JsonNode node)
+    {
+        if (node is not JsonArray arr)
+            return null;
 
         var list = new List<string>(arr.Count);
         foreach (var item in arr)
