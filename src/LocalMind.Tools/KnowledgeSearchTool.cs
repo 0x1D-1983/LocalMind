@@ -22,15 +22,10 @@ public sealed class KnowledgeSearchTool(
     public string Name => "search_knowledge_base";
 
     public string Description => """
-        Searches the ingested documentation knowledge base (Qdrant) using semantic similarity.
-        Call this tool for documentation/lore questions that are likely answered in ingested markdown/internal docs,
-        including newly added files.
-        For structured X-Men roster queries (status, powers, team memberships by year, relationships), prefer
-        query_character_roster first, then use this tool to fill narrative gaps or confirm details.
-        You may call it multiple times with different queries if the first results are thin.
-        Prefer search queries shaped as "<subject> <attribute> <related terms>" (subject, what you need to know,
-        and disambiguating context) — avoid overly vague single-word queries like "parents" alone when the subject is implied.
+        Semantic search over ingested documentation (markdown and internal docs), including newly added files.
         Returns ranked chunks with file paths, short file names, and text excerpts.
+        Shape the query as "<subject> <attribute> <related terms>" — avoid vague single-word queries
+        like "parents" when the subject is implied.
         """;
 
     public JsonObject InputSchema => new()

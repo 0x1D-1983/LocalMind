@@ -23,11 +23,8 @@ public sealed class CharacterRosterTool(
 
     public string Description => """
         Queries the structured X-Men character registry in PostgreSQL.
-        Use this for precise, filterable facts: team memberships by year, 
-        power classifications, character status, and known relationships.
-        Prefer this over the knowledge base search when the question is 
-        structured ("list all telepaths", "who are Jean Grey's siblings") 
-        rather than narrative ("what happened to Jean Grey at Alkali Lake").
+        Returns filterable character rows: team memberships by year, power classifications,
+        character status, and known relationships.
         """;
 
     public JsonObject InputSchema => new()

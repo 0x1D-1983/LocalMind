@@ -63,22 +63,23 @@ public sealed class Agent(
             activity?.SetTag("cache.hit", false);
         }
 
-        var systemPrompt = await prompts.GetAsync(PromptNames.KnowledgeAgent, ct: ct);
+        var systemPrompt = await ComposeSystemPromptAsync(ct);
 
         // Build initial conversation 
         var userMessage = new Message(ChatRole.User, userQuery);
 
         var history = new List<Message>(persistedTurns.Count + 2)
         {
-            new(ChatRole.System, systemPrompt.Content)
+            new(ChatRole.System, systemPrompt)
         };
 
         history.AddRange(persistedTurns);   // previous clean turns
         history.Add(userMessage);            // this turn's user message
 
         var trace = new AgentTraceBuilder();
-        var kbSourceFilesOrdered = new List<string>();
-        var kbSourceFilesSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var documentSourceFilesOrdered = new List<string>();
+        var documentSourceFilesSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var documentSearchRan = false;
 
         // ReAct loop
         for (int iteration = 0; iteration < agentOptions.MaxIterations; iteration++)
@@ -118,7 +119,7 @@ public sealed class Agent(
                     trace:  traceSnapshot,
                     ct:     ct);
 
-                response = GroundKnowledgeSources(response, kbSourceFilesOrdered, traceSnapshot);
+                response = GroundDocumentSources(response, documentSourceFilesOrdered, documentSearchRan);
 
                 // Emit structured log events for every LLM interaction
                 logger.LogInformation("LLM call completed {@LlmTrace}", new {
@@ -126,7 +127,7 @@ public sealed class Agent(
                     PromptTokens = response.Trace!.TotalPromptTokens,
                     CompletionTokens = response.Trace!.TotalCompletionTokens,
                     DurationMs = sw.ElapsedMilliseconds,
-                    ToolCallsRequested = toolCalls.Count,
+                    ToolCallsRequested = traceSnapshot.ToolCallSequence.Length,
                     CacheHit = false,
                     Iteration = iteration + 1,
                 });
@@ -136,7 +137,7 @@ public sealed class Agent(
                     promptTokens: response.Trace!.TotalPromptTokens,
                     completionTokens: response.Trace!.TotalCompletionTokens,
                     durationMs: sw.ElapsedMilliseconds,
-                    toolCallsRequested: toolCalls.Count,
+                    toolCallsRequested: traceSnapshot.ToolCallSequence.Length,
                     cacheHit: false,
                     iteration: iteration + 1);
 
@@ -168,7 +169,8 @@ public sealed class Agent(
             // so it can correlate results with its earlier tool call decisions.
             foreach (var result in toolResults)
             {
-                AppendKnowledgeSearchSourceFiles(result, kbSourceFilesOrdered, kbSourceFilesSeen);
+                if (TryCollectDocumentSourceFiles(result, documentSourceFilesOrdered, documentSourceFilesSeen))
+                    documentSearchRan = true;
                 history.Add(new Message(ChatRole.Tool, result.Content)
                 {
                     ToolName = result.ToolName
@@ -225,19 +227,20 @@ public sealed class Agent(
             activity?.SetTag("cache.hit", false);
         }
 
-        var systemPrompt = await prompts.GetAsync(PromptNames.KnowledgeAgent, ct: ct);
+        var systemPrompt = await ComposeSystemPromptAsync(ct);
 
         var userMessage = new Message(ChatRole.User, userQuery);
         var history = new List<Message>(persistedTurns.Count + 2)
         {
-            new(ChatRole.System, systemPrompt.Content)
+            new(ChatRole.System, systemPrompt)
         };
         history.AddRange(persistedTurns);
         history.Add(userMessage);
 
         var trace = new AgentTraceBuilder();
-        var kbSourceFilesOrdered = new List<string>();
-        var kbSourceFilesSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var documentSourceFilesOrdered = new List<string>();
+        var documentSourceFilesSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var documentSearchRan = false;
 
         for (int iteration = 0; iteration < agentOptions.MaxIterations; iteration++)
         {
@@ -305,14 +308,14 @@ public sealed class Agent(
                     trace: traceSnapshot,
                     ct: ct);
 
-                response = GroundKnowledgeSources(response, kbSourceFilesOrdered, traceSnapshot);
+                response = GroundDocumentSources(response, documentSourceFilesOrdered, documentSearchRan);
 
                 logger.LogInformation("LLM call completed {@LlmTrace}", new {
                     Model = agentOptions.ModelName,
                     PromptTokens = response.Trace!.TotalPromptTokens,
                     CompletionTokens = response.Trace!.TotalCompletionTokens,
                     DurationMs = sw.ElapsedMilliseconds,
-                    ToolCallsRequested = 0,
+                    ToolCallsRequested = traceSnapshot.ToolCallSequence.Length,
                     CacheHit = false,
                     Iteration = iteration + 1,
                 });
@@ -322,7 +325,7 @@ public sealed class Agent(
                     promptTokens: response.Trace!.TotalPromptTokens,
                     completionTokens: response.Trace!.TotalCompletionTokens,
                     durationMs: sw.ElapsedMilliseconds,
-                    toolCallsRequested: 0,
+                    toolCallsRequested: traceSnapshot.ToolCallSequence.Length,
                     cacheHit: false,
                     iteration: iteration + 1);
 
@@ -342,7 +345,8 @@ public sealed class Agent(
             var toolResults = await executor.ExecuteAllAsync([llmResponse.Message], ct);
             foreach (var result in toolResults)
             {
-                AppendKnowledgeSearchSourceFiles(result, kbSourceFilesOrdered, kbSourceFilesSeen);
+                if (TryCollectDocumentSourceFiles(result, documentSourceFilesOrdered, documentSourceFilesSeen))
+                    documentSearchRan = true;
                 history.Add(new Message(ChatRole.Tool, result.Content)
                 {
                     ToolName = result.ToolName
@@ -360,6 +364,18 @@ public sealed class Agent(
             $"Agent could not produce a final answer within {agentOptions.MaxIterations} iterations. " +
             $"Last tool calls: {string.Join(", ", history.LastOrDefault(m => m.Role == ChatRole.Assistant)?.ToolCalls?.Select(t => t.Function?.Name) ?? [])}. " +
             $"Consider increasing MaxIterations or simplifying the query.");
+    }
+
+    /// <summary>
+    /// Tool-use policy sits above the agent output contract and above individual
+    /// tool descriptions, so routing ("which tools, how many") is not duplicated
+    /// inside each function prompt.
+    /// </summary>
+    private async Task<string> ComposeSystemPromptAsync(CancellationToken ct)
+    {
+        var toolPolicy = await prompts.GetAsync(PromptNames.ToolPolicy, ct: ct);
+        var agentPrompt = await prompts.GetAsync(PromptNames.KnowledgeAgent, ct: ct);
+        return $"{toolPolicy.Content}\n\n{agentPrompt.Content}";
     }
 
     private async Task<ChatResponseStream> CallModelDoneAsync(
@@ -598,17 +614,16 @@ public sealed class Agent(
     }
 
     /// <summary>
-    /// Models often hallucinate plausible filenames in <c>sources</c>. When <c>search_knowledge_base</c> ran,
+    /// Models often hallucinate plausible filenames in <c>sources</c>. When a document-search tool ran,
     /// ground markdown-like entries using filenames from the tool JSON. Non-markdown source strings (e.g. DB tables)
     /// from the model are kept when they do not duplicate grounded files.
     /// </summary>
-    private static AgentResponse GroundKnowledgeSources(
+    private static AgentResponse GroundDocumentSources(
         AgentResponse response,
-        List<string> kbSourceFilesOrdered,
-        AgentTrace trace)
+        List<string> documentSourceFilesOrdered,
+        bool documentSearchRan)
     {
-        var kbRan = trace.ToolCallSequence.Any(static n => n == "search_knowledge_base");
-        if (!kbRan)
+        if (!documentSearchRan)
             return response;
 
         static bool LooksLikeMarkdownFile(string s) =>
@@ -620,9 +635,9 @@ public sealed class Agent(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (kbSourceFilesOrdered.Count > 0)
+        if (documentSourceFilesOrdered.Count > 0)
         {
-            var merged = new List<string>(kbSourceFilesOrdered);
+            var merged = new List<string>(documentSourceFilesOrdered);
             foreach (var s in nonMdFromModel)
             {
                 if (!merged.Exists(t => t.Equals(s, StringComparison.OrdinalIgnoreCase)))
@@ -632,26 +647,37 @@ public sealed class Agent(
             return response with { Sources = [.. merged] };
         }
 
-        // KB ran but no filenames parsed — drop invented .md / .markdown only.
+        // Document search ran but no filenames parsed — drop invented .md / .markdown only.
         return response with { Sources = [.. nonMdFromModel] };
     }
 
-    private static void AppendKnowledgeSearchSourceFiles(
+    /// <summary>
+    /// Collects document filenames from any successful tool result whose JSON looks like
+    /// ranked document hits (array of objects with filename/file/source). Returns true when
+    /// the payload matched that shape, including an empty hit list.
+    /// </summary>
+    private static bool TryCollectDocumentSourceFiles(
         ToolResult result,
         List<string> ordered,
         HashSet<string> seen)
     {
-        if (result.ToolName != "search_knowledge_base" || !result.IsSuccess)
-            return;
+        if (!result.IsSuccess)
+            return false;
 
         try
         {
             using var doc = JsonDocument.Parse(result.Content);
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                return;
+                return false;
 
+            var matchedDocumentHits = false;
             foreach (var el in doc.RootElement.EnumerateArray())
             {
+                if (el.ValueKind != JsonValueKind.Object || !LooksLikeDocumentHit(el))
+                    continue;
+
+                matchedDocumentHits = true;
+
                 var file = "";
                 if (el.TryGetProperty("filename", out var fn) && fn.ValueKind == JsonValueKind.String)
                     file = fn.GetString() ?? "";
@@ -672,10 +698,22 @@ public sealed class Agent(
                     continue;
                 ordered.Add(file);
             }
+
+            // Empty array is a valid no-hit document search; other tools rarely return [].
+            return matchedDocumentHits || doc.RootElement.GetArrayLength() == 0;
         }
         catch (JsonException)
         {
             // Malformed tool JSON — leave sources unchanged for this result.
+            return false;
         }
     }
+
+    private static bool LooksLikeDocumentHit(JsonElement el) =>
+        HasStringProperty(el, "filename")
+        || HasStringProperty(el, "file")
+        || HasStringProperty(el, "source");
+
+    private static bool HasStringProperty(JsonElement el, string name) =>
+        el.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String;
 }

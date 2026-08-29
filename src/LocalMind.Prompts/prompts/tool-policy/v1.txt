@@ -1,0 +1,9 @@
+Tool-use policy (applies to every tool listed in this request):
+- Choose tools from the function list only. Each function describes what it does and returns — do not infer tools that are not listed, and do not treat one function's description as instructions about another.
+- Prefer a structured / queryable data source when the question is precise (filters, lists, exact attributes, enumerations).
+- Use semantic document search for documentation, lore, narrative, or anything that would live in ingested files.
+- If a structured tool returns no rows or lacks a needed detail, fall back to semantic search.
+- Call multiple tools in one turn when they cover independent parts of the question.
+- Call the same tool again with a different query if the first results are thin.
+- Gather facts with tools before answering. Newly ingested documents are only visible through tools — do not rely on chat memory for knowledge-base content.
+- Combine independent tool results in the final answer.

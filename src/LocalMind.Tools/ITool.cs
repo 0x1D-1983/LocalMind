@@ -12,8 +12,9 @@ public interface ITool
     string Name { get; }
 
     /// <summary>
-    /// Human-readable description sent to the model in the tool manifest.
-    /// This is the model's only signal for when to call this tool — write it carefully.
+    /// Capability text for the tool manifest: what this tool does, what it returns,
+    /// and how to fill its parameters. Do not mention other tools or when to prefer
+    /// this tool over others — that belongs in the tool-use policy prompt.
     /// </summary>
     string Description { get; }
 
