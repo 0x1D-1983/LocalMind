@@ -46,7 +46,7 @@ public sealed class KnowledgeSearchTool(
             ["top_k"] = new JsonObject
             {
                 ["type"] = "integer",
-                ["description"] = "Number of chunks to return. Default: 15, max: 25. Use 18–25 for narrow factual questions (names, dates, relationships) so the right passage is not buried under generic mentions of the same topic."
+                ["description"] = "Number of chunks to return. Default: 5, max: 10. Use 5–10 for narrow factual questions (names, dates, relationships) so the right passage is not buried under generic mentions of the same topic."
             }
         },
         ["required"] = new JsonArray { "query" }
@@ -68,8 +68,8 @@ public sealed class KnowledgeSearchTool(
             return ToolResult.Fail(Name, "Query must be a non-empty string.", sw.Elapsed);
         }
 
-        const int maxK = 25;
-        var topK = 15;
+        const int maxK = 10;
+        var topK = 5;
         if (input.TryGetPropertyValue("top_k", out var topKNode) && topKNode is JsonValue topKVal)
         {
             if (topKVal.TryGetValue(out int i))
