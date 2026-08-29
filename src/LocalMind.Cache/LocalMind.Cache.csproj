@@ -18,4 +18,8 @@
     <PackageReference Include="Qdrant.Client" Version="1.17.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\LocalMind.Telemetry\LocalMind.Telemetry.csproj" />
+  </ItemGroup>
+
 </Project>

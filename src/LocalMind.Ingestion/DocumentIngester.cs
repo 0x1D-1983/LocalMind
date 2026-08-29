@@ -3,6 +3,7 @@ using OllamaSharp;
 using OllamaSharp.Models;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
+using LocalMind.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace LocalMind.Ingestion;
@@ -29,29 +30,34 @@ public class DocumentIngester(
         if (string.IsNullOrWhiteSpace(fileName))
             throw new ArgumentException("File name is required.", nameof(fileName));
 
+        using var activity = LocalMindActivitySources.Ingestion.StartActivity("ingest.document");
+        activity?.SetTag("document.file_name", fileName);
+
         await EnsureCollectionAsync(ct);
 
         var chunks = ChunkByParagraphs(text ?? "", chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
         var docLabel = Path.GetFileName(fileName);
         var sourceLabel = string.IsNullOrWhiteSpace(source) ? docLabel : source;
 
-        // 1 call to Ollama for all chunks
         var inputs = chunks.Select(c => $"search_document: {c}").ToList();
         var allEmbeddings = new List<float[]>();
 
-        foreach (var inputBatch in inputs.Chunk(chunkOpts.EmbeddingBatchSize))
+        using (LocalMindActivitySources.Ingestion.StartActivity("ingest.embed"))
         {
-            var response = await ollama.EmbedAsync(new EmbedRequest {
-                Model = knowledgeBase.EmbeddingModel,
-                Input = inputBatch.ToList()
-            }, cancellationToken: ct);
+            foreach (var inputBatch in inputs.Chunk(chunkOpts.EmbeddingBatchSize))
+            {
+                var response = await ollama.EmbedAsync(new EmbedRequest {
+                    Model = knowledgeBase.EmbeddingModel,
+                    Input = inputBatch.ToList()
+                }, cancellationToken: ct);
 
-            allEmbeddings.AddRange(response.Embeddings);
+                allEmbeddings.AddRange(response.Embeddings);
+            }
         }
 
         var points = chunks.Select((chunk, index) => new PointStruct {
             Id = new PointId { Uuid = GuidHelper.CreateDeterministicGuid(docLabel, index).ToString() },
-            Vectors = allEmbeddings[index],  // aligned by index
+            Vectors = allEmbeddings[index],
             Payload = {
                 ["source"] = sourceLabel,
                 ["filename"] = docLabel,
@@ -61,11 +67,16 @@ public class DocumentIngester(
             }
         }).ToList();
 
-        // Single round-trip to Qdrant
         logger.LogInformation("Ingesting {File}: {ChunkCount} chunks into {Collection}", docLabel, chunks.Count, knowledgeBase.CollectionName);
-        
-        foreach (var batch in points.Chunk(chunkOpts.UpsertBatchSize))
-            await qdrant.UpsertAsync(knowledgeBase.CollectionName, batch, cancellationToken: ct);
+
+        using (LocalMindActivitySources.Ingestion.StartActivity("ingest.upsert"))
+        {
+            foreach (var batch in points.Chunk(chunkOpts.UpsertBatchSize))
+                await qdrant.UpsertAsync(knowledgeBase.CollectionName, batch, cancellationToken: ct);
+        }
+
+        activity?.SetTag("document.chunk_count", chunks.Count);
+        activity?.SetTag("document.collection", knowledgeBase.CollectionName);
 
         logger.LogInformation("Ingested {File}: {ChunkCount} chunks into {Collection}", docLabel, chunks.Count, knowledgeBase.CollectionName);
 

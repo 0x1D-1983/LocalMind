@@ -1,3 +1,4 @@
+using LocalMind.Telemetry;
 using OllamaSharp;
 using OllamaSharp.Models;
 using OllamaSharp.Models.Chat;
@@ -12,6 +13,8 @@ public class QueryRewriter(OllamaApiClient ollama, QueryRewriterOptions options)
         CancellationToken ct = default)
     {
         if (!history.Any()) return query; // no context to resolve
+
+        using var activity = LocalMindActivitySources.Agent.StartActivity("agent.query_rewrite");
 
         var prompt = $"""
             Given this conversation history:

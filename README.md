@@ -95,7 +95,7 @@ dotnet run --project src/LocalMind.KnowledgeChatBot/LocalMind.KnowledgeChatBot.c
 | **LocalMind.Ingestion** | Document chunking, embedding via Ollama, Qdrant upsert; `KnowledgeBaseOptions` + `DocumentIngestOptions` |
 | **LocalMind.Ollama** | `OllamaApiClient` + `OllamaApiClientOptions` DI |
 | **LocalMind.Qdrant** | `QdrantClient` + `QdrantClientOptions` DI |
-| **LocalMind.Telemetry** | Prometheus metric server hosted service + agent LLM call metrics |
+| **LocalMind.Telemetry** | Prometheus metric server, OpenTelemetry tracing (OTLP → Grafana Tempo), agent LLM call metrics |
 
 ## Flow diagrams
 
@@ -143,6 +143,25 @@ Metrics are exposed from the API process and scraped by Prometheus. Current agen
 - `localmind_agent_llm_duration_ms` (labels: `model`, `cache_hit`)
 - `localmind_agent_llm_tool_calls_requested` (label: `model`)
 - `localmind_agent_llm_iteration` (label: `model`)
+
+**Tracing** (`TracingOptions` — API and in-process chat host register `AddLocalMindTracing`):
+
+```json
+{
+  "Tracing": {
+    "Enabled": true,
+    "OtlpEndpoint": "http://localhost:4317"
+  }
+}
+```
+
+Spans are OpenTelemetry (not a Jaeger-specific client), so the same export works with Tempo, Jaeger, or any OTLP collector. Compose runs **Grafana Tempo** plus Grafana so you can see a waterfall of HTTP → application service → agent → tools / Ollama / cache.
+
+```bash
+docker compose up -d tempo grafana
+```
+
+Open [http://localhost:3000](http://localhost:3000) (anonymous admin), then **Explore → Tempo**. After a chat or ingest request, search `{resource.service.name="LocalMind.Api"}` and open a trace. The widest spans are the slow layers (typically `agent.llm.chat` / outbound Ollama HTTP).
 
 **Semantic cache** (`SemanticCacheOptions` — registered by `AddLocalMindApplication`):
 
@@ -219,7 +238,7 @@ If you call `Configure<T>(IConfiguration)` or `OptionsBuilder.Bind(IConfiguratio
 
 ## Docker Compose
 
-`docker-compose.yml` runs **Qdrant**, **Prometheus**, **Loki**, and **Grafana** with persistent volumes where configured. Optional **TimescaleDB** / **pgAdmin** blocks are commented out for later use.
+`docker-compose.yml` runs **Qdrant**, **TimescaleDB**, **Grafana Tempo**, and **Grafana**. Optional **Prometheus** / **Loki** blocks are commented out for later use.
 
 For metrics, `prometheus.yml` includes:
 

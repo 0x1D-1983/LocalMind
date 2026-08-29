@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LocalMind.Telemetry;
 using Microsoft.Extensions.Logging;
 using OllamaSharp.Models.Chat;
 using static OllamaSharp.Models.Chat.Message;
@@ -49,6 +50,10 @@ public sealed class ToolExecutor
         if (calls.Count == 0)
             return [];
 
+        using var batchActivity = LocalMindActivitySources.Tools.StartActivity("tools.execute_all");
+        batchActivity?.SetTag("tools.count", calls.Count);
+        batchActivity?.SetTag("tools.names", string.Join(",", calls.Select(c => c.Function?.Name ?? "unknown")));
+
         _logger.LogDebug("Dispatching {Count} tool call(s) in parallel: {Names}",
             calls.Count, string.Join(", ", calls.Select(c => c.Function?.Name ?? "unknown")));
 
@@ -69,6 +74,9 @@ public sealed class ToolExecutor
         CancellationToken ct = default)
     {
         var toolName = call.Function?.Name ?? string.Empty;
+        using var activity = LocalMindActivitySources.Tools.StartActivity("tools.execute");
+        activity?.SetTag("tool.name", toolName);
+
         var sw = Stopwatch.StartNew();
 
         // --- 1. Resolve tool from registry ---
@@ -108,6 +116,7 @@ public sealed class ToolExecutor
 
             var result = await tool.ExecuteAsync(parseResult.Input!, ct);
             sw.Stop();
+            activity?.SetTag("tool.success", result.IsSuccess);
 
             _logger.LogInformation(
                 "Tool '{ToolName}' completed in {ElapsedMs}ms — Success: {IsSuccess}",
@@ -122,6 +131,7 @@ public sealed class ToolExecutor
             sw.Stop();
             _logger.LogWarning("Tool '{ToolName}' was cancelled after {ElapsedMs}ms",
                 toolName, sw.ElapsedMilliseconds);
+            activity?.SetTag("tool.success", false);
             return ToolResult.Fail(toolName, "Tool execution was cancelled.", sw.Elapsed);
         }
         catch (Exception ex)

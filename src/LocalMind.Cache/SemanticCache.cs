@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LocalMind.Telemetry;
 using OllamaSharp;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
@@ -27,6 +28,7 @@ public class SemanticCache<T>(
 
     public async Task<CacheResult<T>> GetAsync(string query, CancellationToken ct = default)
     {
+        using var activity = LocalMindActivitySources.Cache.StartActivity("cache.get");
         var entities = await entityExtractor.ExtractAsync(query, ct);
         var embedding = await ollama.EmbedAsync(new EmbedRequest {
             Model = options.EmbeddingModel,
@@ -46,17 +48,22 @@ public class SemanticCache<T>(
             cancellationToken: ct);
 
         if (!results.Any())
+        {
+            activity?.SetTag("cache.hit", false);
             return CacheResult<T>.Miss();
+        }
 
         var payload = results.First().Payload;
         var cachedAt = DateTimeOffset.FromUnixTimeSeconds(payload["cached_at"].IntegerValue);
         var value = JsonSerializer.Deserialize<T>(payload["response"].StringValue)!;
 
+        activity?.SetTag("cache.hit", true);
         return CacheResult<T>.Hit(value, cachedAt);
     }
 
     public async Task SetAsync(string query, T value, CancellationToken ct = default)
     {
+        using var activity = LocalMindActivitySources.Cache.StartActivity("cache.set");
         var entities = await entityExtractor.ExtractAsync(query, ct);
         var embedding = await ollama.EmbedAsync(new EmbedRequest {
             Model = options.EmbeddingModel,

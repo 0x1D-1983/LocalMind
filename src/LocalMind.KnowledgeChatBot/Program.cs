@@ -1,5 +1,6 @@
 ﻿using LocalMind.Agent;
 using LocalMind.Application;
+using LocalMind.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -40,11 +41,13 @@ internal static class Program
                     client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
                     client.Timeout = TimeSpan.FromMinutes(10);
                 });
+                builder.Services.AddLocalMindTracing(builder.Configuration, "LocalMind.KnowledgeChatBot");
             }
             else
             {
                 builder.Services.AddLocalMindApplication(builder.Configuration);
                 builder.Services.AddSingleton<IChatClient, InProcessChatClient>();
+                builder.Services.AddLocalMindTracing(builder.Configuration, "LocalMind.KnowledgeChatBot");
             }
 
             using var app = builder.Build();

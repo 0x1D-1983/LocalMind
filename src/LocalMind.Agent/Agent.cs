@@ -31,6 +31,10 @@ public sealed class Agent(
         string userQuery,
         CancellationToken ct = default)
     {
+        using var activity = LocalMindActivitySources.Agent.StartActivity("agent.run");
+        activity?.SetTag("session.id", sessionId);
+        activity?.SetTag("gen_ai.request.model", agentOptions.ModelName);
+
         var sw = Stopwatch.StartNew();
         string resolvedQuery = userQuery;
 
@@ -50,10 +54,13 @@ public sealed class Agent(
             var cacheResult = await semanticCache.GetAsync(resolvedQuery, ct);
             if (cacheResult.IsHit)
             {
+                activity?.SetTag("cache.hit", true);
                 sw.Stop();
                 logger.LogInformation("Semantic cache HIT for query in {ElapsedMs}ms, cached at {CachedAt}", sw.ElapsedMilliseconds, cacheResult.CachedAt);
                 return cacheResult.Value;
             }
+
+            activity?.SetTag("cache.hit", false);
         }
 
         var systemPrompt = await prompts.GetAsync(PromptNames.KnowledgeAgent, ct: ct);
@@ -76,6 +83,9 @@ public sealed class Agent(
         // ReAct loop
         for (int iteration = 0; iteration < agentOptions.MaxIterations; iteration++)
         {
+            using var iterationActivity = LocalMindActivitySources.Agent.StartActivity("agent.iteration");
+            iterationActivity?.SetTag("agent.iteration", iteration);
+
             logger.LogDebug("ReAct iteration {Iteration}", iteration);
 
             var llmResponse = await CallModelDoneAsync(history, ct);
@@ -187,6 +197,10 @@ public sealed class Agent(
         string userQuery,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        using var activity = LocalMindActivitySources.Agent.StartActivity("agent.run.stream");
+        activity?.SetTag("session.id", sessionId);
+        activity?.SetTag("gen_ai.request.model", agentOptions.ModelName);
+
         var sw = Stopwatch.StartNew();
         string resolvedQuery = userQuery;
 
@@ -203,9 +217,12 @@ public sealed class Agent(
             var cacheResult = await semanticCache.GetAsync(resolvedQuery, ct);
             if (cacheResult.IsHit)
             {
+                activity?.SetTag("cache.hit", true);
                 yield return new AgentStreamFinal(cacheResult.Value);
                 yield break;
             }
+
+            activity?.SetTag("cache.hit", false);
         }
 
         var systemPrompt = await prompts.GetAsync(PromptNames.KnowledgeAgent, ct: ct);
@@ -224,6 +241,9 @@ public sealed class Agent(
 
         for (int iteration = 0; iteration < agentOptions.MaxIterations; iteration++)
         {
+            using var iterationActivity = LocalMindActivitySources.Agent.StartActivity("agent.iteration");
+            iterationActivity?.SetTag("agent.iteration", iteration);
+
             logger.LogDebug("ReAct iteration {Iteration}", iteration);
 
             // We keep the tool-using portion non-streaming to avoid leaking partial thoughts/tool JSON.
@@ -346,6 +366,9 @@ public sealed class Agent(
         List<Message> history,
         CancellationToken ct)
     {
+        using var activity = LocalMindActivitySources.Agent.StartActivity("agent.llm.chat");
+        activity?.SetTag("gen_ai.request.model", agentOptions.ModelName);
+
         var request = new ChatRequest
         {
             Model    = agentOptions.ModelName,

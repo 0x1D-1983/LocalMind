@@ -16,7 +16,8 @@ builder.Logging.AddSerilog(dispose: false);
 
 builder.Services
     .AddLocalMindApplication(builder.Configuration)
-    .AddPrometheusMetricServer(builder.Configuration);
+    .AddPrometheusMetricServer(builder.Configuration)
+    .AddLocalMindTracing(builder.Configuration, "LocalMind.Api", aspNetCore: true);
 
 builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();
 builder.Services.AddProblemDetails();

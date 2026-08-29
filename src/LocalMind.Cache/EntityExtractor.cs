@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LocalMind.Telemetry;
 using OllamaSharp;
 using OllamaSharp.Models;
 
@@ -9,6 +10,7 @@ public class EntityExtractor(OllamaApiClient ollama, EntityExtractorOptions opti
     public async Task<IReadOnlyList<string>> ExtractAsync(
         string query, CancellationToken ct = default)
     {
+        using var activity = LocalMindActivitySources.Cache.StartActivity("cache.extract_entities");
         var response = await ollama.GenerateAsync(new GenerateRequest {
             Model  = options.Model,
             Prompt = $"""

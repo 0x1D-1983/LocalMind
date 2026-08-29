@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LocalMind.Prompts;
+using LocalMind.Telemetry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
@@ -61,6 +62,8 @@ public sealed class StructuredOutputParser : IStructuredOutputParser
         CancellationToken ct)
     {
         string? lastError = null;
+
+        using var activity = LocalMindActivitySources.Agent.StartActivity("agent.parse_output");
 
         for (int attempt = 0; attempt < _options.MaxOutputRetries; attempt++)
         {
