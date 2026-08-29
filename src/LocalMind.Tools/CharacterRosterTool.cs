@@ -49,7 +49,7 @@ public sealed class CharacterRosterTool(
             ["power_class"] = new JsonObject
             {
                 ["type"] = "array",
-                ["description"] = "List of power classes (e.g., telepath, telekinetic)",
+                ["description"] = "Match characters that have ANY of these power classes (case-insensitive substring, e.g. telepathy matches Telepathy)",
                 ["items"] = new JsonObject { ["type"] = "string" },
                 ["uniqueItems"] = true,
                 ["minItems"] = 1,
@@ -113,11 +113,27 @@ public sealed class CharacterRosterTool(
                 where.Add($"c.status = {p}");
             }
 
-            // Require the character to have ALL listed power classes.
+            // ANY listed term is enough. Compare case-insensitively as a substring so
+            // the model can pass "telepathy" and still match stored "Telepathy".
             if (powerClass is { Length: > 0 })
             {
-                var p = AddParam("p", powerClass);
-                where.Add($"c.power_class @> {p}");
+                var patterns = powerClass
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Select(s => $"%{s.Trim()}%")
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                if (patterns.Length > 0)
+                {
+                    var p = AddParam("p", patterns);
+                    where.Add($"""
+                        EXISTS (
+                            SELECT 1
+                            FROM unnest(c.power_class) AS pc
+                            WHERE pc ILIKE ANY ({p})
+                        )
+                        """);
+                }
             }
 
             // Team membership / active year constraints via EXISTS.
