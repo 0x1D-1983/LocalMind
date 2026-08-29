@@ -12,7 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="prompts\**\*.txt" />
+    <None Remove="prompts/**/*.txt" />
+    <EmbeddedResource Include="prompts/**/*.txt" />
   </ItemGroup>
 
 </Project>

@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace LocalMind.Api;
 
-internal sealed class ApplicationExceptionHandler : IExceptionHandler
+internal sealed class ApplicationExceptionHandler(ILogger<ApplicationExceptionHandler> logger) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext,
@@ -24,6 +24,11 @@ internal sealed class ApplicationExceptionHandler : IExceptionHandler
 
         if (status is null)
             return false;
+
+        if (status.Value >= StatusCodes.Status500InternalServerError)
+            logger.LogError(exception, "{Title}: {Detail}", title, exception.Message);
+        else
+            logger.LogWarning(exception, "{Title}: {Detail}", title, exception.Message);
 
         httpContext.Response.StatusCode = status.Value;
         await httpContext.Response.WriteAsJsonAsync(new ProblemDetails

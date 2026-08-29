@@ -31,8 +31,16 @@ public sealed class EmbeddedPromptProvider(ILogger<EmbeddedPromptProvider> logge
 
     private Prompt Load(string name, string? version)
     {
-        var match = FindResource(name, version)
-            ?? throw new PromptNotFoundException(name, version);
+        var match = FindResource(name, version);
+        if (match is null)
+        {
+            logger.LogError(
+                "Prompt '{PromptName}' version '{PromptVersion}' was not found. Embedded resources: {Resources}",
+                name,
+                version ?? "latest",
+                string.Join(", ", _assembly.GetManifestResourceNames()));
+            throw new PromptNotFoundException(name, version);
+        }
 
         using var stream = _assembly.GetManifestResourceStream(match.ResourceName)
             ?? throw new PromptNotFoundException(name, version);
@@ -75,20 +83,44 @@ public sealed class EmbeddedPromptProvider(ILogger<EmbeddedPromptProvider> logge
 
     private static ResourceMatch? TryParse(string resourceName, string promptName)
     {
-        var marker = $".{promptName}.v";
-        var index = resourceName.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
-        if (index < 0)
-            return null;
+        var resource = resourceName.Replace('\\', '/');
+        var names = new[] { promptName, promptName.Replace('-', '_') }
+            .Distinct(StringComparer.OrdinalIgnoreCase);
 
-        var rest = resourceName[(index + marker.Length)..];
+        foreach (var name in names)
+        {
+            var slashMarker = $"/{name}/v";
+            var slashIndex = resource.LastIndexOf(slashMarker, StringComparison.OrdinalIgnoreCase);
+            if (slashIndex >= 0
+                && TryParseVersionFile(resource[(slashIndex + slashMarker.Length)..], out var slashVersion))
+            {
+                return new ResourceMatch(resourceName, slashVersion.Version, slashVersion.Number);
+            }
+
+            var dotMarker = $".{name}.v";
+            var dotIndex = resourceName.LastIndexOf(dotMarker, StringComparison.OrdinalIgnoreCase);
+            if (dotIndex >= 0
+                && TryParseVersionFile(resourceName[(dotIndex + dotMarker.Length)..], out var dotVersion))
+            {
+                return new ResourceMatch(resourceName, dotVersion.Version, dotVersion.Number);
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryParseVersionFile(string rest, out (string Version, int Number) parsed)
+    {
+        parsed = default;
         if (!rest.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
-            return null;
+            return false;
 
         var numberPart = rest[..^4];
         if (!int.TryParse(numberPart, out var number) || number < 1)
-            return null;
+            return false;
 
-        return new ResourceMatch(resourceName, $"v{number}", number);
+        parsed = ($"v{number}", number);
+        return true;
     }
 
     private static string? NormalizeVersion(string version)
