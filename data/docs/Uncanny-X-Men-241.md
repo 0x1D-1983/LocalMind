@@ -1,4 +1,5 @@
-# Synopsis for "Inferno, Part the Second: Fan the Flames!"
+# Inferno, Part 2: Fan the Flames!
+
 Madelyne refuses to believe that Mr. Sinister is her creator. Instead she and her pet "Grey" demons attack him, because he is the mastermind behind the Marauders, who stole her baby. But the orphanage is Sinister’s headquarters, he has built in defensive systems, that chain the Goblin Queen and use her own energies against her. She calls to N’astirh for help, but he remains hidden in the shadows.
 
 In the transforming New York, the X-Men continue to fight the remaining Marauders. Colossus is shocked to see Riptide among them, for he killed him during the Mutant Massacre. The police, riding demon-transformed police cars interfere. Polaris / Malice destroys one of the vehicles and hurls the debris against the X-Men, while Vertigo uses her powers to create a general nausea. The X-Men are almost defeated when Longshot throws randomly a blade, which hits a sign over Vertigo's head; it falls down and knocks her out. The fight continues and the X-Men fight more aggressive than ever, Havok even uses his power in full force killing Harpoon.

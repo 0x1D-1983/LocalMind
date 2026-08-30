@@ -215,7 +215,7 @@ Used before the cache lookup when there is conversation history: the model rewri
 }
 ```
 
-**Document ingest** (`DocumentIngestOptions` — API document ingest and ingest console; chunking plus batch sizes for embed/upsert):
+**Document ingest** (`DocumentIngestOptions` — API document ingest and ingest console; chunking, embed/upsert batches, and a **chat-capable** model for per-chunk contextualization — not the embedding model):
 
 ```json
 {
@@ -223,7 +223,10 @@ Used before the cache lookup when there is conversation history: the model rewri
     "ChunkSize": 2000,
     "Overlap": 300,
     "EmbeddingBatchSize": 16,
-    "UpsertBatchSize": 32
+    "UpsertBatchSize": 32,
+    "EnableContextualization": true,
+    "ContextualizationModel": "qwen2.5:1.5b-instruct",
+    "ContextualizationConcurrency": 3
   }
 }
 ```

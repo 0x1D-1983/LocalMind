@@ -1,6 +1,7 @@
 ﻿using System.Text.RegularExpressions;
 using OllamaSharp;
 using OllamaSharp.Models;
+using OllamaSharp.Models.Chat;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 using LocalMind.Telemetry;
@@ -15,6 +16,10 @@ public class DocumentIngester(
     DocumentIngestOptions chunkOpts,
     ILogger<DocumentIngester> logger)
 {
+    // Cap how much of the source doc we feed back in per chunk when generating context.
+    // Keeps the contextualization prompt cheap even on long documents.
+    private const int MaxDocContextChars = 6000;
+
     public async Task<DocumentIngestResult> IngestAsync(string filePath, CancellationToken ct = default)
     {
         var text = await File.ReadAllTextAsync(filePath, cancellationToken: ct);
@@ -35,11 +40,33 @@ public class DocumentIngester(
 
         await EnsureCollectionAsync(ct);
 
-        var chunks = ChunkByParagraphs(text ?? "", chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
+        var rawText = text ?? "";
+        var chunks = ChunkByParagraphs(rawText, chunkOpts.ChunkSize, chunkOpts.Overlap).ToList();
         var docLabel = Path.GetFileName(fileName);
         var sourceLabel = string.IsNullOrWhiteSpace(source) ? docLabel : source;
 
-        var inputs = chunks.Select(c => $"search_document: {c}").ToList();
+        // --- Contextualization pass -------------------------------------------------
+        // For each chunk, ask a chat model to write 1-2 sentences that resolve
+        // ambiguous references (pronouns, "the redhead", reveals like "actually this
+        // was X's memory, not Y's") using the surrounding document as ground truth.
+        // This is what fixes cases where the subject of the fact (e.g. Jean Grey)
+        // is only named in a clause elsewhere in the chunk while the bulk of the
+        // text is about someone else (e.g. Madelyne). Dense embeddings of the raw
+        // chunk skew toward the dominant subject and bury the actual answer.
+        var contextualizedChunks = chunks;
+        if (chunkOpts.EnableContextualization)
+        {
+            using (LocalMindActivitySources.Ingestion.StartActivity("ingest.contextualize"))
+            {
+                logger.LogInformation(
+                    "Contextualizing {ChunkCount} chunk(s) with {Model}",
+                    chunks.Count,
+                    chunkOpts.ContextualizationModel);
+                contextualizedChunks = await ContextualizeChunksAsync(rawText, chunks, ct);
+            }
+        }
+
+        var inputs = contextualizedChunks.Select(c => $"search_document: {c}").ToList();
         var allEmbeddings = new List<float[]>();
 
         using (LocalMindActivitySources.Ingestion.StartActivity("ingest.embed"))
@@ -63,7 +90,8 @@ public class DocumentIngester(
                 ["filename"] = docLabel,
                 ["chunk_index"] = index,
                 ["chunk_total"] = chunks.Count,
-                ["text"] = chunk,
+                ["text"] = chunk,                             // original, for display/citation
+                ["contextualized_text"] = contextualizedChunks[index], // what got embedded; feed THIS to the RAG generator
             }
         }).ToList();
 
@@ -81,6 +109,78 @@ public class DocumentIngester(
         logger.LogInformation("Ingested {File}: {ChunkCount} chunks into {Collection}", docLabel, chunks.Count, knowledgeBase.CollectionName);
 
         return new DocumentIngestResult(docLabel, chunks.Count, knowledgeBase.CollectionName);
+    }
+
+    /// <summary>
+    /// Generates a short disambiguating preamble for each chunk using the chat model,
+    /// then returns "{context}\n\n{chunk}" for embedding. Runs with bounded concurrency
+    /// since local Ollama chat calls are much slower than the embedding batch calls.
+    /// Falls back to the raw chunk on any failure so ingestion never hard-fails on this step.
+    /// </summary>
+    private async Task<List<string>> ContextualizeChunksAsync(string fullDocText, List<string> chunks, CancellationToken ct)
+    {
+        var docExcerpt = fullDocText.Length > MaxDocContextChars
+            ? fullDocText[..MaxDocContextChars]
+            : fullDocText;
+
+        var results = new string[chunks.Count];
+        using var gate = new SemaphoreSlim(chunkOpts.ContextualizationConcurrency);
+
+        var tasks = chunks.Select(async (chunk, index) =>
+        {
+            await gate.WaitAsync(ct);
+            try
+            {
+                results[index] = await GenerateChunkContextAsync(docExcerpt, chunk, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Contextualization failed for chunk {Index}; falling back to raw chunk", index);
+                results[index] = chunk;
+            }
+            finally
+            {
+                gate.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
+    private async Task<string> GenerateChunkContextAsync(string docExcerpt, string chunk, CancellationToken ct)
+    {
+        var prompt = $"""
+            You are preparing a passage for a search index. Given the document
+            excerpt and the specific chunk below, write 1-2 short sentences of
+            context that would help someone understand who/what the chunk is
+            really about, especially if the chunk reveals that an event, memory,
+            or trait actually belongs to a different person/entity than the one
+            it initially seems to describe. Only state facts present in the
+            excerpt. Do not summarize the whole chunk, just add the missing
+            disambiguating context. Output only the sentences, nothing else.
+
+            <document_excerpt>
+            {docExcerpt}
+            </document_excerpt>
+
+            <chunk>
+            {chunk}
+            </chunk>
+            """;
+
+        var response = await ollama.ChatAsync(new ChatRequest
+        {
+            Model = chunkOpts.ContextualizationModel,
+            Messages = [new Message { Role = ChatRole.User, Content = prompt }],
+            Stream = false
+        }, ct).StreamToEndAsync(); // adjust to your OllamaSharp version's non-streaming call shape
+
+        var contextSentence = response?.Message?.Content?.Trim();
+
+        return string.IsNullOrWhiteSpace(contextSentence)
+            ? chunk
+            : $"{contextSentence}\n\n{chunk}";
     }
 
     private async Task EnsureCollectionAsync(CancellationToken ct)
