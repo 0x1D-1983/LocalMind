@@ -71,6 +71,8 @@ public sealed class KnowledgeSearchTool(
                 topK = Math.Clamp(i, 1, maxK);
             else if (topKVal.TryGetValue(out long l))
                 topK = Math.Clamp((int)l, 1, maxK);
+            else if (topKVal.TryGetValue(out double d))
+                topK = Math.Clamp((int)Math.Round(d), 1, maxK);
         }
 
         try

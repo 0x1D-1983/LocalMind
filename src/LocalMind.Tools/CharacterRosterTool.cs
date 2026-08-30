@@ -17,14 +17,17 @@ public sealed class CharacterRosterTool(
         string? Status,
         string[]? PowerClass,
         string? FirstIssue,
-        string? Notes);
+        string? Notes,
+        string RelationshipsJson);
 
     public string Name => "query_character_roster";
 
     public string Description => """
         Queries the structured X-Men character registry in PostgreSQL.
-        Returns filterable character rows: team memberships by year, power classifications,
-        character status, and known relationships.
+        Returns character rows: team memberships by year, power classifications,
+        character status, and a relationships array (type, related character).
+        A row that matched relation_to / relation_type includes those relationships
+        in the payload — the match is evidence the relationship exists.
         """;
 
     public JsonObject InputSchema => new()
@@ -168,6 +171,8 @@ public sealed class CharacterRosterTool(
             }
 
             // Relationships via EXISTS. Requires both relation_to and relation_type to avoid vague scans.
+            string? relationToP = null;
+            string? relationTypeP = null;
             if (!string.IsNullOrWhiteSpace(relationTo) || relationTypes is { Length: > 0 })
             {
                 if (string.IsNullOrWhiteSpace(relationTo) || relationTypes is not { Length: > 0 })
@@ -182,8 +187,8 @@ public sealed class CharacterRosterTool(
                 if (types.Length == 0)
                     return ToolResult.Fail(Name, "Provide both 'relation_to' and 'relation_type' together.", sw.Elapsed);
 
-                var toP = AddParam("p", $"%{relationTo.Trim()}%");
-                var typeP = AddParam("p", types);
+                relationToP = AddParam("p", $"%{relationTo.Trim()}%");
+                relationTypeP = AddParam("p", types);
 
                 // Match either direction in relationships (a->b or b->a).
                 where.Add($"""
@@ -195,9 +200,9 @@ public sealed class CharacterRosterTool(
                             WHEN r.character_a = c.id THEN r.character_b
                             ELSE r.character_a
                           END
-                        WHERE r.relation ILIKE ANY ({typeP})
+                        WHERE r.relation ILIKE ANY ({relationTypeP})
                           AND (r.character_a = c.id OR r.character_b = c.id)
-                          AND (other.codename ILIKE {toP} OR other.real_name ILIKE {toP})
+                          AND (other.codename ILIKE {relationToP} OR other.real_name ILIKE {relationToP})
                     )
                     """);
             }
@@ -205,6 +210,17 @@ public sealed class CharacterRosterTool(
             if (where.Count == 0)
             {
                 return ToolResult.Fail(Name, "At least one filter is required.", sw.Elapsed);
+            }
+
+            // Always project relationships onto the row so a filter hit is visible
+            // in the payload, not only as an EXISTS predicate.
+            var relationshipWhere = "r.character_a = c.id OR r.character_b = c.id";
+            if (relationToP is not null && relationTypeP is not null)
+            {
+                relationshipWhere += $"""
+                     AND r.relation ILIKE ANY ({relationTypeP})
+                     AND (other.codename ILIKE {relationToP} OR other.real_name ILIKE {relationToP})
+                    """;
             }
 
             var sql = $"""
@@ -215,7 +231,21 @@ public sealed class CharacterRosterTool(
                     c.status,
                     c.power_class,
                     c.first_issue,
-                    c.notes
+                    c.notes,
+                    (
+                        SELECT COALESCE(json_agg(json_build_object(
+                            'type', r.relation,
+                            'related_codename', other.codename,
+                            'related_real_name', other.real_name
+                        ) ORDER BY other.codename), '[]'::json)
+                        FROM relationships r
+                        JOIN characters other
+                          ON other.id = CASE
+                            WHEN r.character_a = c.id THEN r.character_b
+                            ELSE r.character_a
+                          END
+                        WHERE {relationshipWhere}
+                    )::text AS relationships
                 FROM characters c
                 WHERE {string.Join(" AND ", where)}
                 ORDER BY c.codename
@@ -243,17 +273,19 @@ public sealed class CharacterRosterTool(
             var ordPowerClass = reader.GetOrdinal("power_class");
             var ordFirstIssue = reader.GetOrdinal("first_issue");
             var ordNotes      = reader.GetOrdinal("notes");
+            var ordRels       = reader.GetOrdinal("relationships");
             
             while (await reader.ReadAsync(ct))
             {
                 rows.Add(new CharacterRow(
-                    Id:         reader.GetInt32(ordId),
-                    Codename:   reader.GetString(ordCodename),
-                    RealName:   reader.IsDBNull(ordRealName)    ? null : reader.GetString(ordRealName),
-                    Status:     reader.IsDBNull(ordStatus)      ? null : reader.GetString(ordStatus),
-                    PowerClass: reader.IsDBNull(ordPowerClass)  ? null : reader.GetFieldValue<string[]>(ordPowerClass),
-                    FirstIssue: reader.IsDBNull(ordFirstIssue)  ? null : reader.GetString(ordFirstIssue),
-                    Notes:      reader.IsDBNull(ordNotes)       ? null : reader.GetString(ordNotes)
+                    Id:                reader.GetInt32(ordId),
+                    Codename:          reader.GetString(ordCodename),
+                    RealName:          reader.IsDBNull(ordRealName)    ? null : reader.GetString(ordRealName),
+                    Status:            reader.IsDBNull(ordStatus)      ? null : reader.GetString(ordStatus),
+                    PowerClass:        reader.IsDBNull(ordPowerClass)  ? null : reader.GetFieldValue<string[]>(ordPowerClass),
+                    FirstIssue:        reader.IsDBNull(ordFirstIssue)  ? null : reader.GetString(ordFirstIssue),
+                    Notes:             reader.IsDBNull(ordNotes)       ? null : reader.GetString(ordNotes),
+                    RelationshipsJson: reader.IsDBNull(ordRels)        ? "[]" : reader.GetString(ordRels)
                 ));
             }
 
@@ -268,6 +300,7 @@ public sealed class CharacterRosterTool(
                     ["status"] = r.Status,
                     ["first_issue"] = r.FirstIssue,
                     ["notes"] = r.Notes,
+                    ["relationships"] = JsonNode.Parse(r.RelationshipsJson) as JsonArray ?? new JsonArray(),
                 };
 
                 if (r.PowerClass is { Length: > 0 })

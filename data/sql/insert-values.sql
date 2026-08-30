@@ -7,8 +7,8 @@ INSERT INTO public.characters(id, codename, real_name, status, power_class, firs
     (4, 'Havok', 'Alex Summers', 'active', ARRAY['Cosmic energy absorption', 'Plasma beams'], 'X-Men #54 (January, 1969)', NULL),
     (5, 'Mister Sinister', 'Nathaniel Essex', 'active', ARRAY['Molecular Manipulation', 'Shapeshifting', 'Regenerative Healing Factor', 'Longevity', 'Enhanced Durability', 'Superhuman Strength', 'Telepathy', 'Telekinesis', 'Energy Projection', 'Expert genetic engineer and surgeon', 'Cloning Expert', 'Precognition'], 'Uncanny X-Men #213 (October, 1986)', NULL),
     (6, 'Cable', 'Nathan Summers', 'active', ARRAY['telepathic','telekinetic'], 'Uncanny X-Men #201 (October, 1985)', NULL),
-    (7, 'Goblin Queen', 'Madelyne Pryor', 'active', ARRAY['Telekinesis','Telepathy', 'Sorcery'], 'Uncanny X-Men #168 (January, 1983)', NULL),
-    (8, 'Dark Phoenix', 'Jean Grey', 'active', ARRAY['Cosmic Pyrokinesis','Telepathy','Telekinesis','Flight','Phasing','Levitation','Immortality','Atmokinesis','Psionic Nexus','Cosmic Teleportation','Disintegration','Reality Warping','Telepathic Wave','Resurrection','Matter Manipulation','Telepathic Negations','Molecular Reconstruction','Meteor Summoning','Space Time Manipulation','Energy Manipulation & Absorption','Superhuman Strength & Stamina & Reflexes'], 'X-Men #1 (July, 1963)', NULL),
+    (7, 'Goblin Queen', 'Madelyne Pryor', 'deceased', ARRAY['Telekinesis','Telepathy', 'Sorcery'], 'Uncanny X-Men #168 (January, 1983)', NULL),
+    (8, 'Dark Phoenix', 'Jean Grey', 'deceased', ARRAY['Cosmic Pyrokinesis','Telepathy','Telekinesis','Flight','Phasing','Levitation','Immortality','Atmokinesis','Psionic Nexus','Cosmic Teleportation','Disintegration','Reality Warping','Telepathic Wave','Resurrection','Matter Manipulation','Telepathic Negations','Molecular Reconstruction','Meteor Summoning','Space Time Manipulation','Energy Manipulation & Absorption','Superhuman Strength & Stamina & Reflexes'], 'X-Men #1 (July, 1963)', NULL),
 
 -- team_memberships
 -- Phoenix
