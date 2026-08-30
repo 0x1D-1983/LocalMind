@@ -210,7 +210,9 @@ Used before the cache lookup when there is conversation history: the model rewri
   "KnowledgeBase": {
     "CollectionName": "knowledge",
     "EmbeddingModel": "nomic-embed-text",
-    "VectorSize": 768
+    "VectorSize": 768,
+    "DefaultTopK": 5,
+    "MaxTopK": 10
   }
 }
 ```

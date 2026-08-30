@@ -41,7 +41,7 @@ public sealed class KnowledgeSearchTool(
             ["top_k"] = new JsonObject
             {
                 ["type"] = "integer",
-                ["description"] = "Number of chunks to return. Default: 5, max: 10. Use 5–10 for narrow factual questions (names, dates, relationships) so the right passage is not buried under generic mentions of the same topic."
+                ["description"] = $"Number of chunks to return. Default: {knowledgeBase.Value.DefaultTopK}, max: {knowledgeBase.Value.MaxTopK}. Use a higher top_k for narrow factual questions (names, dates, relationships) so the right passage is not buried under generic mentions of the same topic."
             }
         },
         ["required"] = new JsonArray { "query" }
@@ -63,8 +63,8 @@ public sealed class KnowledgeSearchTool(
             return ToolResult.Fail(Name, "Query must be a non-empty string.", sw.Elapsed);
         }
 
-        const int maxK = 10;
-        var topK = 5;
+        var maxK = Math.Max(1, knowledgeBase.Value.MaxTopK);
+        var topK = Math.Clamp(knowledgeBase.Value.DefaultTopK, 1, maxK);
         if (input.TryGetPropertyValue("top_k", out var topKNode) && topKNode is JsonValue topKVal)
         {
             if (topKVal.TryGetValue(out int i))
@@ -106,12 +106,15 @@ public sealed class KnowledgeSearchTool(
                 if (string.IsNullOrEmpty(filename) && !string.IsNullOrEmpty(sourcePath))
                     filename = Path.GetFileName(sourcePath);
 
+                var contextualized = PayloadString(h.Payload, "contextualized_text");
+                var original = PayloadString(h.Payload, "text");
+
                 return new SearchHit(
                     Score: h.Score,
                     Source: sourcePath,
                     Filename: filename,
                     ChunkIndex: PayloadLong(h.Payload, "chunk_index"),
-                    Text: PayloadString(h.Payload, "text")
+                    Text: string.IsNullOrWhiteSpace(contextualized) ? original : contextualized
                 );
             }).ToList();
 

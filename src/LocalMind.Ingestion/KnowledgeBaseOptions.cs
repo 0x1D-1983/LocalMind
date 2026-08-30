@@ -21,4 +21,12 @@ public sealed class KnowledgeBaseOptions
     /// <summary>Vector size for the embedding model (e.g. 768 for <c>nomic-embed-text</c>).</summary>
     [Range(1, 8192)]
     public uint VectorSize { get; set; } = 768;
+
+    /// <summary>Default number of chunks <c>search_knowledge_base</c> returns when the model omits <c>top_k</c>.</summary>
+    [Range(1, 100)]
+    public int DefaultTopK { get; set; } = 5;
+
+    /// <summary>Upper bound for <c>top_k</c> on knowledge search.</summary>
+    [Range(1, 100)]
+    public int MaxTopK { get; set; } = 10;
 }
