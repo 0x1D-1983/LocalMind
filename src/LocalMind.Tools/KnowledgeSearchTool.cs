@@ -52,14 +52,12 @@ public sealed class KnowledgeSearchTool(
         var sw = Stopwatch.StartNew();
         if (!input.TryGetPropertyValue("query", out var queryNode) || queryNode is not JsonValue queryVal)
         {
-            sw.Stop();
             return ToolResult.Fail(Name, "Missing or invalid 'query' argument.", sw.Elapsed);
         }
 
         var queryText = queryVal.GetValue<string>();
         if (string.IsNullOrWhiteSpace(queryText))
         {
-            sw.Stop();
             return ToolResult.Fail(Name, "Query must be a non-empty string.", sw.Elapsed);
         }
 
@@ -88,7 +86,6 @@ public sealed class KnowledgeSearchTool(
 
             if (embed?.Embeddings is not { Count: > 0 })
             {
-                sw.Stop();
                 return ToolResult.Fail(Name, "Ollama returned no embeddings.", sw.Elapsed);
             }
 
@@ -120,7 +117,6 @@ public sealed class KnowledgeSearchTool(
                 );
             }).ToList();
 
-            sw.Stop();
             var json = JsonSerializer.Serialize(results);
             
             if (results.Count > 0)
