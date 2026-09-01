@@ -36,7 +36,7 @@ public sealed class CacheStep(
 
                 ctx.Stopwatch.Stop();
                 ctx.CacheHit = true;
-                ctx.Result = result.Value;
+                ctx.Result = AgentResponseProcessor.DistinctLists(result.Value);
                 yield break;
             }
         }

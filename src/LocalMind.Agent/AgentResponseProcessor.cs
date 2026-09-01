@@ -41,6 +41,22 @@ public sealed class AgentResponseProcessor
         return response with { Sources = [.. nonMdFromModel] };
     }
 
+    /// <summary>
+    /// Models often repeat the same source or tool name. The API lists are
+    /// unique; <see cref="AgentTrace.ToolCallSequence"/> still records every call.
+    /// </summary>
+    public static AgentResponse DistinctLists(AgentResponse response) =>
+        response with
+        {
+            Sources = DistinctPreserveOrder(response.Sources),
+            ToolsUsed = DistinctPreserveOrder(response.ToolsUsed)
+        };
+
+    private static string[] DistinctPreserveOrder(string[] items) =>
+        [.. items
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+
     public bool TryCollectDocumentSourceFiles(
         ToolResult result,
         List<string> ordered,

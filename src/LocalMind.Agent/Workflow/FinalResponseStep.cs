@@ -91,6 +91,7 @@ public sealed class FinalResponseStep(
         var response = await parser.ParseFinalResponseAsync(raw, traceSnapshot, ct);
         response = processor.GroundSources(
             response, ctx.DocumentSourceFilesOrdered, ctx.DocumentSearchRan);
+        response = AgentResponseProcessor.DistinctLists(response);
 
         logger.LogInformation("LLM call completed {@LlmTrace}", new {
             Model = Options.ModelName,
