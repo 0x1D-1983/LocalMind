@@ -1,3 +1,4 @@
+using LocalMind.Agent.Workflow;
 using LocalMind.Cache;
 using LocalMind.Prompts;
 using LocalMind.Telemetry;
@@ -30,6 +31,15 @@ public static class AgentExtensions
         services.AddSingleton<IConversationStore, InMemoryConversationStore>();
         services.AddSingleton<IStructuredOutputParser, StructuredOutputParser>();
         services.AddSingleton<LlmCallMetrics>();
+        services.AddSingleton<AgentResponseProcessor>();
+        services.AddSingleton<SystemPromptComposer>();
+        services.AddSingleton<QueryRewriteStep>();
+        services.AddSingleton<CacheStep>();
+        services.AddSingleton<LlmStep>();
+        services.AddSingleton<ToolStep>();
+        services.AddSingleton<FinalResponseStep>();
+        services.AddSingleton<AgentWorkflow>();
+        services.AddSingleton<Agent>();
 
         services.AddSingleton(sp =>
         {
@@ -52,25 +62,6 @@ public static class AgentExtensions
             var cache = sp.GetRequiredService<SemanticCache<AgentResponse>>();
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<SemanticCacheInitializer<AgentResponse>>();
             return new SemanticCacheInitializer<AgentResponse>(cache, logger);
-        });
-
-        services.AddSingleton(sp =>
-        {
-            var ollama = sp.GetRequiredService<OllamaApiClient>();
-            var executor = sp.GetRequiredService<ToolExecutor>();
-            var manifest = sp.GetRequiredService<ToolManifestBuilder>();
-            var conversationStore = sp.GetRequiredService<IConversationStore>();
-            var agentOptions = sp.GetRequiredService<IOptions<AgentOptions>>().Value;
-            var semanticCacheOptions = sp.GetRequiredService<IOptions<SemanticCacheOptions>>().Value;
-            var semanticCache = sp.GetRequiredService<SemanticCache<AgentResponse>>();
-            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agent>();
-            var structuredOutputParser = sp.GetRequiredService<IStructuredOutputParser>();
-            var queryRewriter = sp.GetRequiredService<QueryRewriter>();
-            var llmCallMetrics = sp.GetRequiredService<LlmCallMetrics>();
-            var prompts = sp.GetRequiredService<IPromptProvider>();
-            
-            return new Agent(ollama, executor, manifest, conversationStore, semanticCache, 
-                agentOptions, semanticCacheOptions, logger, structuredOutputParser, queryRewriter, llmCallMetrics, prompts);
         });
 
         return services;
